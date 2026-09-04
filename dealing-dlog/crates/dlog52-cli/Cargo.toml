@@ -1,0 +1,18 @@
+[package]
+name = "dlog52-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+dlog52-codec = { path = "../dlog52-codec" }
+dlog52-group = { path = "../dlog52-group" }
+dlog52-proofs = { path = "../dlog52-proofs" }
+dlog52-uniqueness = { path = "../dlog52-uniqueness" }
+hex.workspace = true
+k256.workspace = true
+rand_chacha.workspace = true
+
+[lints]
+workspace = true

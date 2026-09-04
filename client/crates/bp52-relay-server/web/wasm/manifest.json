@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "target": "wasm32-unknown-unknown",
+  "profile": "release",
+  "artifacts": [
+    {
+      "name": "wallet",
+      "url": "/wasm/wallet.wasm",
+      "sha256": "1bcfa25d3554daf5423ab62046ad7847bcff8e2defa595fa2f2d0c3886ed1d81",
+      "sizeBytes": 170184,
+      "securityBoundary": "wallet-local-signer"
+    },
+    {
+      "name": "origin",
+      "url": "/wasm/origin.wasm",
+      "sha256": "47670333ee51d868ab3aa5e024e8ad249eaa3cf9cd49bb3c05e8e1e63dd35b97",
+      "sizeBytes": 403215,
+      "securityBoundary": "origin-transaction-builder"
+    },
+    {
+      "name": "deal",
+      "url": "/wasm/deal.wasm",
+      "sha256": "0edcaee512e2777f540e04b121727cf1137a0142b9fcca001134d6deacec1f63",
+      "sizeBytes": 1051075,
+      "securityBoundary": "deal-secret-worker"
+    },
+    {
+      "name": "game",
+      "url": "/wasm/game.wasm",
+      "sha256": "20cd9978fb6d643231cfb216c34089c2ee90ee122d8a35f35cae59cd0c1f168f",
+      "sizeBytes": 1603465,
+      "securityBoundary": "public-game-reducer"
+    },
+    {
+      "name": "chain",
+      "url": "/wasm/chain.wasm",
+      "sha256": "deb8510a8b275fe36181db4fc5f737c60cb6ad157790315d5d3d7d22e24b79a2",
+      "sizeBytes": 2853053,
+      "securityBoundary": "chain-secret-worker"
+    },
+    {
+      "name": "transaction",
+      "url": "/wasm/transaction.wasm",
+      "sha256": "7659f26188834228d25aef8726d2d4fa1a3a0d35ffc97f3e8ce3f477e0c52865",
+      "sizeBytes": 115710,
+      "securityBoundary": "transaction-inspector"
+    }
+  ]
+}

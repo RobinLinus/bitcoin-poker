@@ -1,0 +1,18 @@
+[package]
+name = "dlog52-uniqueness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+dlog52-codec = { path = "../dlog52-codec" }
+dlog52-group = { path = "../dlog52-group" }
+dlog52-transcript = { path = "../dlog52-transcript" }
+k256.workspace = true
+rand_core.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

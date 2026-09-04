@@ -1,0 +1,26 @@
+[package]
+name = "bp52-chain-runtime"
+publish = false
+description = "Witness construction and chain-following runtime for BP52-CHAIN-v1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+bp52-chain-bitcoin = { path = "../bp52-chain-bitcoin" }
+bp52-chain-compiler = { path = "../bp52-chain-compiler" }
+bp52-chain-types = { path = "../bp52-chain-types" }
+bp52-lamport = { path = "../bp52-lamport" }
+bp52-poker = { path = "../bp52-poker" }
+bp52-protocol.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+rand_core.workspace = true
+
+[lints]
+workspace = true

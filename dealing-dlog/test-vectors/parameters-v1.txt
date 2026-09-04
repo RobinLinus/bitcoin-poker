@@ -1,0 +1,7 @@
+TEST ONLY — DLOG52-DEAL-v1 draft-1 parameter vector
+suite=secp256k1_XMD:SHA-256_SSWU_RO_
+dst=DLOG52-DEAL-v1/message-generator/secp256k1_XMD:SHA-256_SSWU_RO_
+msg=DLOG52-DEAL-v1/message-generator
+message_generator_compressed=026d07c8f9da86e3d0e18300260d75bc9bb5aec1604a086ef53919050842bd916f
+manifest_length=256
+params_id=b27a2fbad523ad222ac7b996d0990ec75017aa8fa0844ebc965991548fa0ccb7

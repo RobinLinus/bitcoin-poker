@@ -1,0 +1,25 @@
+[package]
+name = "bp52-chain-bitcoin"
+publish = false
+description = "Deterministic Bitcoin transaction and predicate backend for BP52-CHAIN-v1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+bp52-bitcoin.workspace = true
+bp52-chain-types = { path = "../bp52-chain-types" }
+bp52-lamport = { path = "../bp52-lamport" }
+bp52-poker = { path = "../bp52-poker" }
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bp52-core-test-support = { path = "../bp52-core-test-support" }
+rand_core.workspace = true
+
+[lints]
+workspace = true

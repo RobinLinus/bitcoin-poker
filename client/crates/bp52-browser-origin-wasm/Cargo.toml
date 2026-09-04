@@ -1,0 +1,32 @@
+[package]
+name = "bp52-browser-origin-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+base64.workspace = true
+bp52-origin = { path = "../bp52-origin" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+bitcoin.workspace = true
+k256 = { workspace = true, features = ["ecdsa"] }
+
+[lints.rust]
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

@@ -1,0 +1,299 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  quality:
+    name: Format, lint, and docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: dealing
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Verify vendored source integrity
+        run: ../scripts/check-source-integrity.sh
+      - name: Prime all locked dependency graphs for archive verification
+        run: |
+          cargo metadata --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path benchmarks/wasm/Cargo.toml --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path ../chain/Cargo.toml --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path ../client/Cargo.toml --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path ../client-cli/Cargo.toml --locked --format-version 1 > /dev/null
+      - name: Verify source archive integrity
+        run: ../scripts/check-source-integrity.sh --archive-smoke
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint BP52-owned targets
+        run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      - name: Build API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  test:
+    name: Workspace tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dealing
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Run unit and integration tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Run documentation tests
+        run: cargo test --workspace --doc --locked
+
+  msrv:
+    name: Rust 1.85 compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: dealing
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install declared minimum Rust version
+        run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Check every target on the MSRV
+        run: cargo +1.85.0 check --workspace --all-targets --locked
+
+  harnesses:
+    name: Fuzz and benchmark harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dealing
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install WebAssembly target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Check harness formatting
+        run: |
+          cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+          cargo fmt --manifest-path benchmarks/Cargo.toml -- --check
+          cargo fmt --manifest-path benchmarks/wasm/Cargo.toml -- --check
+      - name: Compile all libFuzzer targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+      - name: Compile performance harness
+        run: |
+          cargo check --manifest-path benchmarks/Cargo.toml --locked
+          cargo check --release --manifest-path benchmarks/wasm/Cargo.toml --target wasm32-unknown-unknown --locked
+          cargo check --release --manifest-path benchmarks/wasm/Cargo.toml --target wasm32-unknown-unknown --locked --no-default-features --features browser-entropy
+      - name: Lint harness code
+        run: |
+          cargo clippy --manifest-path fuzz/Cargo.toml --bins --locked --no-deps -- -D warnings
+          cargo clippy --manifest-path benchmarks/Cargo.toml --all-targets --locked --no-deps -- -D warnings
+          cargo clippy --release --manifest-path benchmarks/wasm/Cargo.toml --target wasm32-unknown-unknown --locked --no-deps -- -D warnings
+          cargo clippy --release --manifest-path benchmarks/wasm/Cargo.toml --target wasm32-unknown-unknown --locked --no-default-features --features browser-entropy --no-deps -- -D warnings
+
+  chain-quality:
+    name: Chain format, lint, and docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Verify lockfile and dependency graph
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Check formatting
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+      - name: Lint chain-owned targets
+        run: |
+          cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+          cargo clippy --manifest-path fuzz/Cargo.toml --bins --no-deps --locked -- -D warnings
+      - name: Build API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  chain-test:
+    name: Chain workspace tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Run all chain tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Run chain documentation tests
+        run: cargo test --workspace --doc --locked
+
+  chain-msrv:
+    name: Chain Rust 1.85 compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install declared minimum Rust version
+        run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Check every chain target on the MSRV
+        run: cargo +1.85.0 check --workspace --all-targets --locked
+
+  client-quality:
+    name: Client format, lint, and docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Verify lockfile and dependency graph
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint client-owned targets
+        run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      - name: Build API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  client-test:
+    name: Client workspace tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Run all client tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Run client documentation tests
+        run: cargo test --workspace --doc --locked
+
+  client-browser-test:
+    name: Client browser contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Run fast browser contracts
+        run: node scripts/test-browser.mjs
+
+  client-wasm:
+    name: Qualified browser Wasm build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build each Wasm security boundary with pinned rustc and clang
+        run: ./scripts/build-browser-wasm.sh --docker --validate-only
+      - name: Verify published raw Wasm manifest and artifacts
+        run: ./scripts/build-browser-wasm.sh --check
+
+  client-msrv:
+    name: Client Rust 1.85 compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install declared minimum Rust version
+        run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Check every client target on the MSRV
+        run: cargo +1.85.0 check --workspace --all-targets --locked
+
+  client-cli-quality:
+    name: CLI format, check, and docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: client-cli
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Verify lockfile and dependency graph
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check CLI-owned targets
+        run: cargo check --workspace --all-targets --locked
+      - name: Build API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  client-cli-test:
+    name: CLI workspace tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: client-cli
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Run all CLI tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Run CLI documentation tests
+        run: cargo test --workspace --doc --locked
+
+  client-cli-msrv:
+    name: CLI Rust 1.85 compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: client-cli
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install declared minimum Rust version
+        run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Check every CLI target on the MSRV
+        run: cargo +1.85.0 check --workspace --all-targets --locked

@@ -1,0 +1,30 @@
+[package]
+name = "bp52-native-chain"
+publish = false
+description = "Native secret-owning BP52 heads-up fixed-limit chain participant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+bp52-bitcoin = { path = "../../../dealing/crates/bp52-bitcoin" }
+bp52-chain-bitcoin.workspace = true
+bp52-chain-compiler.workspace = true
+bp52-chain-runtime.workspace = true
+bp52-chain-types.workspace = true
+bp52-game-session.workspace = true
+bp52-codec = { path = "../../../dealing/crates/bp52-codec" }
+bp52-lamport = { path = "../../../chain/crates/bp52-lamport" }
+bp52-poker = { path = "../../../chain/crates/bp52-poker" }
+bp52-protocol.workspace = true
+rand_core = { version = "=0.6.4", default-features = false }
+rand_chacha = { version = "=0.3.1", default-features = false }
+sha2.workspace = true
+zeroize = { version = "=1.9.0", features = ["derive"] }
+
+[lints]
+workspace = true

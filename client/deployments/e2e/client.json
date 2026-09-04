@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "deploymentId": "local-e2e",
+  "protocolProfile": "headsUpFixedLimitV1",
+  "relay": {
+    "apiBasePath": "/api/v1",
+    "pollIntervalMs": 250,
+    "requestTimeoutMs": 10000,
+    "maxPayloadBase64Bytes": 22369624,
+    "kinds": {
+      "ready": "session.ready.v1",
+      "nonceCommit": "client.nonce-commit.v1",
+      "nonceReveal": "client.nonce-reveal.v1",
+      "nonceReady": "client.nonce-ready.v1",
+      "stagingFunding": "client.staging-funding.v2",
+      "originPackage": "client.origin-package.v2",
+      "originRefundSignature": "client.origin-refund-sig.v2",
+      "originFundingSignature": "client.origin-funding-sig.v2",
+      "gameExchange": "game.exchange.v1",
+      "chainExchange": "chain.exchange.v1"
+    }
+  },
+  "chain": {
+    "backend": "esplora",
+    "esploraUrl": "http://127.0.0.1:3001",
+    "explorerUrl": "http://127.0.0.1:3001",
+    "network": "signet",
+    "genesisDisplayHashHex": "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+    "signetChallengeHex": "512102f7561d208dd9ae99bf497273e16f389bdbd6c4742ddb8e6b216e64fa2928ad8f51ae",
+    "checkpoint": {
+      "height": 339000,
+      "displayHashHex": "000001ce7d14b7c4eb8f989d3825b4212ea6a6a30f62df8bf6486b69a247242b"
+    },
+    "allowBroadcast": true,
+    "addressHrp": "tb",
+    "confirmations": { "origin": 1, "gameplay": 1 },
+    "feeFloorSatPerVbyte": 1
+  },
+  "game": {
+    "stagingContributionSat": 27000,
+    "originFundingFeeSat": 500,
+    "originValueSat": 53500,
+    "activationFeeSat": 500,
+    "gameplayRootValueSat": 53000,
+    "originRefundFeeSat": 500,
+    "refundOutputSat": 26500,
+    "refundCsvBlocks": 144,
+    "unitSat": 100,
+    "maxBetsPerStreet": 4,
+    "startingStackSat": 20000,
+    "feeReserveSat": 13000,
+    "dustThresholdSat": 330,
+    "fees": {
+      "bettingSat": 224,
+      "revealSat": 264,
+      "aliceShowdownSat": 2203,
+      "bobPayoutSat": 3089,
+      "timeoutSat": 232
+    },
+    "button": "alice",
+    "revealOrder": { "flopFirst": "alice", "turnFirst": "bob", "riverFirst": "alice" },
+    "splitRemainderRecipient": "bob",
+    "timeoutPolicy": "potOnly"
+  }
+}

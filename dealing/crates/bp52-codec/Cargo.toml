@@ -1,0 +1,15 @@
+[package]
+name = "bp52-codec"
+publish = false
+description = "Canonical bounded wire codec for BP52-DEAL-v1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

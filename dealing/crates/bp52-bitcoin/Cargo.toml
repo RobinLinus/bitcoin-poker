@@ -1,0 +1,27 @@
+[package]
+name = "bp52-bitcoin"
+publish = false
+description = "Bitcoin-facing BP52 share and card openings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+bitcoin_hashes.workspace = true
+bp52-protocol = { path = "../bp52-protocol" }
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bp52-circuit = { path = "../bp52-circuit" }
+bp52-codec = { path = "../bp52-codec" }
+bp52-group = { path = "../bp52-group" }
+bp52-sigma = { path = "../bp52-sigma" }
+bp52-uniqueness = { path = "../bp52-uniqueness" }
+rand_core.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,37 @@
+[package]
+name = "bp52-browser-game-wasm"
+publish = false
+description = "Raw WebAssembly bridge for the backend-neutral BP52 game-session reducer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bitcoin.workspace = true
+bp52-chain-bitcoin.workspace = true
+bp52-chain-compiler.workspace = true
+bp52-chain-types.workspace = true
+bp52-client-ports = { path = "../bp52-client-ports" }
+bp52-codec = { path = "../../../dealing/crates/bp52-codec" }
+bp52-game-session = { path = "../bp52-game-session" }
+bp52-lamport = { path = "../../../chain/crates/bp52-lamport" }
+bp52-protocol.workspace = true
+
+[dev-dependencies]
+bp52-origin = { path = "../bp52-origin" }
+
+[lints.rust]
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

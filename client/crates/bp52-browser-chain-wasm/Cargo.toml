@@ -1,0 +1,41 @@
+[package]
+name = "bp52-browser-chain-wasm"
+publish = false
+description = "Secret-owning Web Worker/Wasm runtime for the BP52 heads-up fixed-limit v1 chain graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bitcoin.workspace = true
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+bp52-bitcoin = { path = "../../../dealing/crates/bp52-bitcoin" }
+bp52-chain-bitcoin.workspace = true
+bp52-chain-compiler.workspace = true
+bp52-chain-runtime.workspace = true
+bp52-chain-types.workspace = true
+bp52-game-session = { path = "../bp52-game-session" }
+bp52-codec = { path = "../../../dealing/crates/bp52-codec" }
+bp52-lamport = { path = "../../../chain/crates/bp52-lamport" }
+bp52-poker = { path = "../../../chain/crates/bp52-poker" }
+bp52-protocol.workspace = true
+rand_core = { version = "=0.6.4", default-features = false }
+rand_chacha = { version = "=0.3.1", default-features = false }
+sha2.workspace = true
+zeroize = { version = "=1.9.0", features = ["derive"] }
+
+[lints.rust]
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

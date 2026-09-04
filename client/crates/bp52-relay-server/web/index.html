@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#081510" />
+    <meta
+      name="description"
+      content="A private two-player Bitcoin poker table on a configured Bitcoin network."
+    />
+    <title>BP52 — Bitcoin Poker</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js?v=13"></script>
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <header class="topbar">
+      <div class="brand" aria-label="BP52">
+        <span class="brand-mark">BP<span>/</span>52</span>
+        <span class="brand-name">Bitcoin Poker</span>
+      </div>
+      <div class="network-pill" title="Bitcoin network">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <span id="deployment-name">Loading network…</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="lobby" class="lobby-shell">
+        <div class="hero-copy">
+          <p class="eyebrow">Two-player poker · Bitcoin settlement</p>
+          <h1>Poker, settled<br />in Bitcoin.</h1>
+          <p class="hero-body">
+            Deal hidden cards together, play heads-up poker, and settle the result
+            directly in Bitcoin—without a dealer holding the pot.
+          </p>
+          <div class="principles" aria-label="Game features">
+            <span>2 players</span><span>52 cards</span><span>No dealer custody</span>
+          </div>
+        </div>
+
+        <div class="entry-card">
+          <div class="entry-tabs" role="tablist" aria-label="Table entry">
+            <button id="create-tab" class="tab active" role="tab" aria-selected="true">
+              Create table
+            </button>
+            <button id="join-tab" class="tab" role="tab" aria-selected="false">
+              Join table
+            </button>
+          </div>
+
+          <div id="create-panel" class="entry-panel" role="tabpanel">
+            <div class="entry-intro">
+              <span class="card-glyph" aria-hidden="true">A♠</span>
+              <div>
+                <h2>Open a private table</h2>
+                <p>You’ll get a one-time invite link for your opponent.</p>
+              </div>
+            </div>
+            <div class="terms-preview">
+              <div><span>Game</span><strong>Fixed-limit hold’em</strong></div>
+              <div><span>Network</span><strong id="deployment-network">Loading…</strong></div>
+              <div><span>Payout</span><strong>Direct Bitcoin settlement</strong></div>
+            </div>
+            <button id="create-game" class="primary-button" type="button">
+              Create private table
+              <span aria-hidden="true">→</span>
+            </button>
+            <p class="fine-print">Test coins only. Mainnet is disabled.</p>
+          </div>
+
+          <div id="join-panel" class="entry-panel hidden" role="tabpanel">
+            <div class="entry-intro">
+              <span class="card-glyph red" aria-hidden="true">K♥</span>
+              <div>
+                <h2>Take the other seat</h2>
+                <p>Paste the private invite link sent by the table creator.</p>
+              </div>
+            </div>
+            <label class="field-label" for="invite-value">Private invite</label>
+            <input
+              id="invite-value"
+              class="text-field"
+              type="text"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="https://…/#/join/…"
+            />
+            <button id="join-game" class="primary-button" type="button">
+              Join table
+              <span aria-hidden="true">→</span>
+            </button>
+            <p id="join-hint" class="fine-print">The invite grants access to one seat.</p>
+          </div>
+
+          <p id="lobby-error" class="error-message hidden" role="alert"></p>
+        </div>
+      </section>
+
+      <section id="game" class="game-shell hidden" aria-label="Poker table">
+        <div class="game-heading">
+          <h1>Private table</h1>
+        </div>
+
+        <div class="game-layout">
+          <div class="table-column">
+            <div class="poker-table">
+              <div class="felt-ring" aria-hidden="true"></div>
+
+              <div class="seat seat-opponent">
+                <div class="avatar" id="opponent-avatar">G</div>
+                <div class="seat-copy">
+                  <strong id="opponent-name">Guest</strong>
+                  <span id="opponent-state">Waiting to join</span>
+                  <span id="opponent-stack" class="seat-stack">Stack · —</span>
+                </div>
+                <span id="opponent-blind" class="blind-marker hidden" aria-label="Opponent blind"></span>
+                <div class="card-pair mini" aria-hidden="true">
+                  <span></span><span></span>
+                </div>
+              </div>
+
+              <div class="pot-display">
+                <span>Pot</span>
+                <strong id="game-pot">—</strong>
+              </div>
+
+              <div class="community-cards" aria-label="Community cards not dealt">
+                <span id="board-card-0" class="playing-card empty">1</span>
+                <span id="board-card-1" class="playing-card empty">2</span>
+                <span id="board-card-2" class="playing-card empty">3</span>
+                <span id="board-card-3" class="playing-card empty">4</span>
+                <span id="board-card-4" class="playing-card empty">5</span>
+              </div>
+
+              <div class="blind-level" aria-label="Table blinds">
+                <span>
+                  <small>Small blind</small>
+                  <strong id="table-small-blind">Loading…</strong>
+                </span>
+                <span>
+                  <small>Big blind</small>
+                  <strong id="table-big-blind">Loading…</strong>
+                </span>
+              </div>
+
+              <div class="table-message">
+                <div role="status" aria-live="polite" aria-atomic="true">
+                  <span id="table-phase">Waiting for opponent</span>
+                  <small id="table-detail">Share the private link to fill the table.</small>
+                </div>
+                <button id="broadcast-refund" class="secondary-button table-primary-action hidden" type="button" disabled>
+                  Return funds
+                </button>
+              </div>
+
+              <section id="funding-card" class="panel-card funding-card table-funding-card hidden">
+                <div class="panel-title-row">
+                  <div>
+                    <p id="funding-network-label" class="eyebrow">Your seat</p>
+                    <h2>Fund your seat</h2>
+                  </div>
+                  <span class="secure-mark">Test coins only</span>
+                </div>
+                <p>Send one payment of exactly this amount.</p>
+                <div class="funding-amount">
+                  <span>Exact amount</span>
+                  <strong id="funding-amount">Loading…</strong>
+                </div>
+                <div class="funding-blinds" aria-label="Table blinds">
+                  <span>Small blind <strong id="funding-small-blind">Loading…</strong></span>
+                  <span>Big blind <strong id="funding-big-blind">Loading…</strong></span>
+                </div>
+                <label class="field-label compact-label" for="funding-address">Your deposit address</label>
+                <div class="copy-row funding-address-row">
+                  <input id="funding-address" readonly aria-label="Deposit address" />
+                  <button id="copy-funding-address" type="button">Copy</button>
+                </div>
+                <p id="funding-state" class="funding-state" aria-live="polite">
+                  Preparing your deposit address…
+                </p>
+                <div class="staging-inputs" aria-live="polite">
+                  <span>
+                    Your deposit
+                    <strong id="funding-local-input" class="staging-input-state">Not confirmed</strong>
+                  </span>
+                  <span>
+                    Opponent deposit
+                    <strong id="funding-peer-input" class="staging-input-state">Waiting</strong>
+                  </span>
+                </div>
+                <div class="funding-links">
+                  <a id="funding-uri" href="#">Open wallet</a>
+                </div>
+                <p class="microcopy funding-warning">
+                  The game starts automatically after both deposits confirm.
+                </p>
+              </section>
+
+              <div class="seat seat-local">
+                <div class="avatar local" id="local-avatar">H</div>
+                <div class="seat-copy">
+                  <strong id="local-name">You · Host</strong>
+                  <span id="local-stack" class="seat-stack">Stack · —</span>
+                </div>
+                <span id="local-blind" class="blind-marker hidden" aria-label="Your blind"></span>
+                <div id="local-hole-cards" class="card-pair mini face-down" aria-label="Hole cards not dealt">
+                  <span id="hole-card-0"></span><span id="hole-card-1"></span>
+                </div>
+              </div>
+            </div>
+
+            <div id="action-bar" class="action-bar hidden" aria-label="Poker actions">
+              <div class="action-buttons">
+                <button id="action-fold" disabled type="button">Fold</button>
+                <button id="action-check" disabled type="button">Check</button>
+                <button id="action-call" disabled type="button">Call</button>
+                <button id="action-aggressive" disabled class="accent" type="button">Bet / Raise</button>
+                <button id="action-timeout" disabled class="hidden" type="button">Claim timeout</button>
+              </div>
+            </div>
+          </div>
+
+          <aside class="side-panel">
+            <section id="invite-card" class="panel-card">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Opponent seat</p>
+                  <h2>Invite a player</h2>
+                </div>
+              </div>
+              <p>Only someone with this private link can claim the second seat.</p>
+              <div class="copy-row">
+                <input id="share-link" readonly aria-label="Private invite link" />
+                <button id="copy-link" type="button">Copy</button>
+              </div>
+              <p id="copy-state" class="microcopy">Keep it in a private channel.</p>
+            </section>
+
+          </aside>
+        </div>
+        <p id="game-error" class="error-message hidden" role="alert"></p>
+      </section>
+    </main>
+
+  </body>
+</html>

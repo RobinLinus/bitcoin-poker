@@ -1,0 +1,40 @@
+[package]
+name = "bp52-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.85"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+bp52-circuit = { path = "../crates/bp52-circuit" }
+bp52-codec = { path = "../crates/bp52-codec" }
+bp52-group = { path = "../crates/bp52-group" }
+bp52-proof-backend = { path = "../crates/bp52-proof-backend" }
+bp52-protocol = { path = "../crates/bp52-protocol", features = ["fuzzing"] }
+bp52-sigma = { path = "../crates/bp52-sigma" }
+bp52-uniqueness = { path = "../crates/bp52-uniqueness" }
+libfuzzer-sys = "=0.4.13"
+
+[[bin]]
+name = "wire_decode"
+path = "fuzz_targets/wire_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proof_parse"
+path = "fuzz_targets/proof_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "state_schedule"
+path = "fuzz_targets/state_schedule.rs"
+test = false
+doc = false
+bench = false

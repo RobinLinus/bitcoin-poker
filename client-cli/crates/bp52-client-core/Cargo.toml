@@ -1,0 +1,17 @@
+[package]
+name = "bp52-client-core"
+publish = false
+description = "Backend-neutral session and chain-following core for BP52 clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+bp52-client-ports.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

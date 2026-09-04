@@ -1,0 +1,33 @@
+[package]
+name = "bp52-game-session"
+publish = false
+description = "Backend-neutral event-sourced BP52 game-session coordinator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+bp52-chain-bitcoin.workspace = true
+bp52-chain-compiler.workspace = true
+bp52-chain-runtime.workspace = true
+bp52-chain-types.workspace = true
+bp52-client-ports = { path = "../bp52-client-ports" }
+bp52-codec = { path = "../../../dealing/crates/bp52-codec" }
+bp52-lamport = { path = "../../../chain/crates/bp52-lamport" }
+bp52-origin = { path = "../bp52-origin" }
+bp52-protocol.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+# Feature-unify transitive dependencies for a raw `wasm32-unknown-unknown`
+# embedding. The final Worker bridge must register the single custom
+# `getrandom` provider (normally backed by a WebCrypto seed).
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+clear_on_drop = { version = "=0.2.5", default-features = false, features = ["no_cc"] }
+getrandom = { version = "=0.2.17", default-features = false, features = ["custom"] }
+
+[lints]
+workspace = true

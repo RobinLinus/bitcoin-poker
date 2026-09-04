@@ -1,0 +1,21 @@
+[package]
+name = "dlog52-group"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+dlog52-codec = { path = "../dlog52-codec" }
+dlog52-transcript = { path = "../dlog52-transcript" }
+k256.workspace = true
+once_cell.workspace = true
+rand_core.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+hex.workspace = true

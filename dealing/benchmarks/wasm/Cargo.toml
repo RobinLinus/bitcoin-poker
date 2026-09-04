@@ -1,0 +1,39 @@
+[package]
+name = "bp52-wasm-proof-spike"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["benchmark-custom-rng"]
+# Deterministic and deliberately insecure. This keeps the raw Node benchmark
+# independent of wasm-bindgen-generated JavaScript glue.
+benchmark-custom-rng = ["getrandom/custom"]
+# Compile-checks the entropy configuration required by a real browser build.
+browser-entropy = ["getrandom/js"]
+
+[dependencies]
+bp52-circuit = { path = "../../crates/bp52-circuit" }
+bp52-group = { path = "../../crates/bp52-group" }
+bp52-proof-backend = { path = "../../crates/bp52-proof-backend" }
+getrandom = { version = "=0.2.17", default-features = false }
+sha2 = "=0.10.9"
+
+# The pinned Bulletproof backend uses clear_on_drop's C optimizer barrier by
+# default. wasm32-unknown-unknown has no C compiler as part of the Rust target,
+# so the spike feature-unifies its stable-Rust atomic fallback only on Wasm.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+clear_on_drop = { version = "=0.2.5", default-features = false, features = ["no_cc"] }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+overflow-checks = true
+panic = "abort"
+
+[workspace]
+

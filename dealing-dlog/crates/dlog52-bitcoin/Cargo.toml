@@ -1,0 +1,14 @@
+[package]
+name = "dlog52-bitcoin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+dlog52-protocol = { path = "../dlog52-protocol" }
+thiserror.workspace = true
+
+[lints]
+workspace = true
