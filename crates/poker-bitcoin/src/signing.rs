@@ -67,8 +67,8 @@ impl DefaultSighashSignature {
 /// Compute `SIGHASH_DEFAULT` for one Taproot script-path input.
 ///
 /// Under BIP341, `SIGHASH_DEFAULT` selects the same input/output commitment set
-/// as `SIGHASH_ALL`, while permitting the script to reject every alternative
-/// mode by enforcing a 64-byte signature.
+/// as `SIGHASH_ALL`. The client chooses this mode to bind the full transaction;
+/// the script does not enforce a signature size or sighash mode.
 ///
 /// # Errors
 ///

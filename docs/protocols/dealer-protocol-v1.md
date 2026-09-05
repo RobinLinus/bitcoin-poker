@@ -852,18 +852,14 @@ For the demonstration, use A's identity key as the authorizer for slots 0, 2, an
 
 ### 20.3 Exact leaf template
 
-For slot `i`, candidate raw sum `t`, and `c=t%52`, build:
+For slot `i` and candidate raw sum `t`, build:
 
 ```text
-PUSH32(deal_id) OP_DROP
-PUSH_MINIMAL_SCRIPTNUM(i) OP_DROP
-PUSH_MINIMAL_SCRIPTNUM(t) OP_DROP
-PUSH_MINIMAL_SCRIPTNUM(c) OP_DROP
 PUSH32(xonly(K[i,t])) OP_CHECKSIGVERIFY
 PUSH32(authorizer[i]) OP_CHECKSIG
 ```
 
-Use minimal Script number encoding; values 0..16 use the corresponding minimal opcode. `PUSH32` is the direct 32-byte push. The metadata is committed script content; it is not an untrusted witness assertion. The compiler must check the arithmetic and key derivation before committing the leaf.
+`PUSH32` is the direct 32-byte push. Slot, raw sum, and card identifier remain in the manifest; the compiler must check the arithmetic and key derivation before committing the leaf. The Taproot internal key commits to the deal and slot, so the leaf does not repeat metadata as push-and-drop operations.
 
 Witness order, bottom to top before script/control-block items:
 

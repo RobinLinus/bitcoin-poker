@@ -8,7 +8,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::{
     ScriptBuf, Transaction, TxOut, Witness, XOnlyPublicKey,
     key::Secp256k1,
-    opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_DROP},
+    opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY},
     script::Builder,
     sighash::{Prevouts, SighashCache, TapSighashType},
     taproot::{ControlBlock, LeafVersion, TapNodeHash, TaprootBuilder},
@@ -83,7 +83,7 @@ pub struct SlotGateManifest {
 /// Nine independent regtest outputs, one for every deal slot.
 #[derive(Clone, Debug)]
 pub struct RegtestGateManifest {
-    /// Accepted deal identifier embedded in every leaf.
+    /// Accepted deal identifier committed by each slot's Taproot internal key.
     pub deal_id: [u8; 32],
     /// Fixed profile identifier.
     pub profile: &'static str,
@@ -98,7 +98,6 @@ pub struct RegtestGateManifest {
 /// Returns [`BitcoinError::Metadata`] for a slot or raw sum outside the fixed
 /// protocol domain.
 pub fn build_candidate_leaf(
-    deal_id: [u8; 32],
     slot: u8,
     raw_sum: u8,
     candidate_key: [u8; 32],
@@ -108,14 +107,6 @@ pub fn build_candidate_leaf(
         return Err(BitcoinError::Metadata);
     }
     Ok(Builder::new()
-        .push_slice(deal_id)
-        .push_opcode(OP_DROP)
-        .push_int(i64::from(slot))
-        .push_opcode(OP_DROP)
-        .push_int(i64::from(raw_sum))
-        .push_opcode(OP_DROP)
-        .push_int(i64::from(raw_sum % 52))
-        .push_opcode(OP_DROP)
         .push_slice(candidate_key)
         .push_opcode(OP_CHECKSIGVERIFY)
         .push_slice(authorizer)
@@ -194,7 +185,6 @@ fn build_slot_gate(
         .enumerate()
         .map(|(raw_sum, candidate)| {
             build_candidate_leaf(
-                deal_id,
                 slot,
                 u8::try_from(raw_sum).map_err(|_| BitcoinError::Metadata)?,
                 xonly(candidate)?,
@@ -350,8 +340,8 @@ mod tests {
 
     #[test]
     fn gate_metadata_and_network_are_checked() {
-        assert!(build_candidate_leaf([1; 32], 8, 102, [2; 32], [3; 32]).is_ok());
-        assert!(build_candidate_leaf([1; 32], 9, 0, [2; 32], [3; 32]).is_err());
+        assert!(build_candidate_leaf(8, 102, [2; 32], [3; 32]).is_ok());
+        assert!(build_candidate_leaf(9, 0, [2; 32], [3; 32]).is_err());
         assert!(require_regtest(bitcoin::Network::Regtest).is_ok());
         assert!(require_regtest(bitcoin::Network::Bitcoin).is_err());
     }

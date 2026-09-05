@@ -22,7 +22,7 @@ pub fn reveal_tapscript(
     actor: [u8; 32],
     slots: &[(u8, [u8; 32])],
 ) -> Result<bitcoin::ScriptBuf, RevealError> {
-    use bitcoin::opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_DROP, OP_EQUALVERIFY, OP_SIZE};
+    use bitcoin::opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_DROP};
     if deal_id == [0; 32] || node_id == [0; 32] || slots.is_empty() || slots.len() > 3 {
         return Err(RevealError::Context);
     }
@@ -42,16 +42,10 @@ pub fn reveal_tapscript(
         builder = builder
             .push_int(i64::from(*slot))
             .push_opcode(OP_DROP)
-            .push_opcode(OP_SIZE)
-            .push_int(64)
-            .push_opcode(OP_EQUALVERIFY)
             .push_slice(key)
             .push_opcode(OP_CHECKSIGVERIFY);
     }
     Ok(builder
-        .push_opcode(OP_SIZE)
-        .push_int(64)
-        .push_opcode(OP_EQUALVERIFY)
         .push_slice(actor)
         .push_opcode(OP_CHECKSIG)
         .into_script())
