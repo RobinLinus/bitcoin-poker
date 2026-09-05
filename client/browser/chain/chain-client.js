@@ -20,7 +20,7 @@ function secretCopy(value, label) {
 /** Browser-side request client for one dedicated secret CHAIN Worker. */
 export class BrowserChainWorker {
   constructor({
-    workerUrl = "/browser/chain/chain-worker.js?v=11",
+    workerUrl = "/browser/chain/chain-worker.js?v=12",
     workerFactory,
     transportRole,
     chainExchangeKind,
@@ -94,7 +94,14 @@ export class BrowserChainWorker {
     return this.#request("accept-relay-message", { message });
   }
   confirmActivation(value) { return this.#request("confirm-activation", value); }
+  openOffchainRoot(transaction) {
+    return this.#request("open-offchain-root", { transaction });
+  }
+  disputePackage() { return this.#request("dispute-package"); }
   observeTip(height) { return this.#request("observe-tip", { height }); }
+  beginSelectedAction({ childNodeId, action }) {
+    return this.#request("begin-selected-action", { childNodeId, action });
+  }
   buildAction(action) { return this.#request("build-action", { action }); }
   buildEdge({ childNodeId }) { return this.#request("build-edge", { childNodeId }); }
   buildReveal() { return this.#request("build-reveal"); }

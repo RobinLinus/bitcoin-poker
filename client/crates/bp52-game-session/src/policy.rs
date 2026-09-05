@@ -70,7 +70,8 @@ pub(crate) const fn event_accepts_source(event: &SessionEvent, source: EventSour
         SessionEvent::DealVerificationAttested(_)
         | SessionEvent::GraphPrepared(_)
         | SessionEvent::RuntimeAuthorized(_)
-        | SessionEvent::StateConfirmed(_) => EventIngress::LocalRuntime,
+        | SessionEvent::StateConfirmed(_)
+        | SessionEvent::StateAdvancedOffchain(_) => EventIngress::LocalRuntime,
         SessionEvent::ActivationAuthorized(_) => EventIngress::WalletOrExchange,
     };
     matches!(

@@ -153,12 +153,12 @@ function cardsFor(role, progress = {}) {
   };
 }
 
-function chainPackage(packageId, role) {
+function chainPackage(packageId, role, marker = 0xa5) {
   return {
     kind: CHAIN_EXCHANGE_KIND,
-    payload: framePayload(Uint8Array.of(packageId, role, 0xa5)),
+    payload: framePayload(Uint8Array.of(packageId, role, marker)),
     messageId: Buffer.from(Uint8Array.from({ length: 32 }, (_, index) =>
-      (packageId * 17 + role * 31 + index) & 0xff
+      index === 0 ? packageId : index === 1 ? role : index === 2 ? marker : index
     )).toString("hex"),
   };
 }
@@ -184,6 +184,7 @@ class FakeSecretChainWorker {
     this.inventoryAttestation = null;
     this.cards = null;
     this.nextCards = null;
+    this.offchainSequence = 0;
     this.calls = [];
   }
 
@@ -249,6 +250,25 @@ class FakeSecretChainWorker {
     return {
       witness: Uint8Array.of(0x57, marker, this.localRole),
       runtimeReceipt: Uint8Array.of(0x52, marker, this.localRole),
+    };
+  }
+
+  #offchainWitness(name, marker) {
+    this.calls.push(name);
+    if (this.nextCards) {
+      this.cards = this.nextCards;
+      this.nextCards = null;
+    }
+    const exchangeMarker = (marker + this.offchainSequence) & 0xff;
+    this.offchainSequence += 1;
+    return {
+      witness: Uint8Array.of(0x57, marker, this.localRole),
+      stateReceipt: Uint8Array.of(0x53, marker, this.localRole),
+      exchange: chainPackage(
+        ChainExchangePackage.OFFCHAIN_TRANSITION,
+        this.localRole,
+        exchangeMarker,
+      ),
     };
   }
 
@@ -397,6 +417,61 @@ class FakeSecretChainWorker {
             this.phase = ChainPhase.PREAUTHORIZATIONS_READY;
           }
           setup = { phase: this.phase };
+        } else if (packageId === ChainExchangePackage.ACTION_SIGNATURE_REQUEST) {
+          this.calls.push(`acceptPackage:${packageId}`);
+          if (role !== this.localRole) {
+            if (this.nextCards) {
+              this.cards = this.nextCards;
+              this.nextCards = null;
+            }
+            return {
+              accepted: true,
+              deferred: false,
+              package: packageId,
+              role,
+              readyForActivation: this.readyRoles.size === 2,
+              activationTransaction: null,
+              responseExchange: chainPackage(
+                ChainExchangePackage.ACTION_SIGNATURE_RESPONSE,
+                this.localRole,
+                encoded[2],
+              ),
+              stateReceipt: Uint8Array.of(0x53, encoded[2], this.localRole),
+            };
+          }
+        } else if (packageId === ChainExchangePackage.ACTION_SIGNATURE_RESPONSE) {
+          this.calls.push(`acceptPackage:${packageId}`);
+          if (role !== this.localRole) {
+            if (this.nextCards) {
+              this.cards = this.nextCards;
+              this.nextCards = null;
+            }
+            return {
+              accepted: true,
+              deferred: false,
+              package: packageId,
+              role,
+              readyForActivation: this.readyRoles.size === 2,
+              activationTransaction: null,
+              stateReceipt: Uint8Array.of(0x53, encoded[2], this.localRole),
+            };
+          }
+        } else if (packageId === ChainExchangePackage.OFFCHAIN_TRANSITION) {
+          if (role !== this.localRole) {
+            if (this.nextCards) {
+              this.cards = this.nextCards;
+              this.nextCards = null;
+            }
+            return {
+              accepted: true,
+              deferred: false,
+              package: packageId,
+              role,
+              readyForActivation: this.readyRoles.size === 2,
+              activationTransaction: null,
+              stateReceipt: Uint8Array.of(0x53, encoded[2], this.localRole),
+            };
+          }
         } else assert.fail(`unexpected CHAIN package ${packageId}`);
         const readyForActivation = this.readyRoles.size === 2;
         if (packageId === 2 && !readyForActivation) {
@@ -409,7 +484,9 @@ class FakeSecretChainWorker {
             activationTransaction: null,
           };
         }
-        this.calls.push(`acceptPackage:${packageId}`);
+        if (packageId < ChainExchangePackage.ACTION_SIGNATURE_REQUEST) {
+          this.calls.push(`acceptPackage:${packageId}`);
+        }
         return {
           accepted: true,
           deferred: false,
@@ -437,10 +514,39 @@ class FakeSecretChainWorker {
           cards: structuredClone(this.cards),
           stateReceipt: Uint8Array.of(0xc1, this.localRole),
         };
+      case "open-offchain-root":
+        assert.ok(sameBytes(message.transaction, ACTIVATION_TRANSACTION));
+        this.phase = ChainPhase.ACTIVE;
+        this.cards = cardsFor(this.localRole);
+        this.calls.push("openOffchainRoot");
+        return {
+          cards: structuredClone(this.cards),
+          stateReceipt: Uint8Array.of(0xc0, this.localRole),
+        };
+      case "dispute-package":
+        this.calls.push("disputePackage");
+        return {
+          activation: Uint8Array.from(ACTIVATION_TRANSACTION),
+          transactions: [Uint8Array.of(0xd1, this.localRole)],
+          headNodeId: new Uint8Array(32).fill(0xd2),
+        };
       case "observe-tip":
         assert.ok(Number.isSafeInteger(message.height));
         this.calls.push("observeTip");
         return {};
+      case "begin-selected-action": {
+        assert.ok(message.action >= 0 && message.action <= 4);
+        const child = exactBytes(message.childNodeId, 32, "selected action child node id");
+        this.calls.push(`action:${message.action}`);
+        this.calls.push("buildAction");
+        return {
+          exchange: chainPackage(
+            ChainExchangePackage.ACTION_SIGNATURE_REQUEST,
+            this.localRole,
+            child[0],
+          ),
+        };
+      }
       case "build-action":
         assert.ok(message.action >= 0 && message.action <= 4);
         this.calls.push(`action:${message.action}`);
@@ -449,20 +555,20 @@ class FakeSecretChainWorker {
         exactBytes(message.childNodeId, 32, "Advance child node id");
         return this.#runtimeWitness("buildEdge", 0xb5);
       case "build-reveal":
-        return this.#runtimeWitness("buildReveal", 0xb6);
+        return this.#offchainWitness("buildReveal", 0xb6);
       case "build-alice-showdown":
         assert.equal(this.localRole, 0);
         assert.deepEqual(
           { subset: message.subset, score: message.score },
           this.cards.aliceHand,
         );
-        return this.#runtimeWitness("buildAliceShowdown", 0xb7);
+        return this.#offchainWitness("buildAliceShowdown", 0xb7);
       case "build-bob-payout":
         assert.equal(this.localRole, 1);
         assert.equal(message.subset, this.cards.bobHand.subset);
         assert.equal(message.score, this.cards.bobHand.score);
         assert.equal(message.outcome, this.cards.outcome);
-        return this.#runtimeWitness("buildBobPayout", 0xb8);
+        return this.#offchainWitness("buildBobPayout", 0xb8);
       case "build-timeout":
         return this.#runtimeWitness("buildTimeout", 0xb9);
       case "confirm-child":
@@ -567,6 +673,31 @@ class FakeRustGameReducer {
     this.runtimeEdges = [];
     this.selectedRuntimeEdge = null;
     this.resultingBalancesByChild.clear();
+    this.phase = this.currentTerminal ? GamePhase.SETTLED : GamePhase.ACTIVE;
+  }
+
+  async applyOffchainStateReceipt(receipt) {
+    const bytes = new Uint8Array(receipt);
+    assert.ok(bytes.byteLength > 0);
+    if (this.phase === GamePhase.AWAITING_ACTIVATION) {
+      this.phase = GamePhase.ACTIVE;
+      this.tableBalances = structuredClone(POST_BLIND_BALANCES);
+      this.pendingBroadcast = null;
+      return;
+    }
+    assert.equal(this.phase, GamePhase.ACTIVE);
+    const marker = bytes[1];
+    const selected = this.runtimeEdges.find((edge) => edge.childNodeId[0] === marker)
+      ?? this.selectedRuntimeEdge
+      ?? this.runtimeEdges[0];
+    assert.ok(selected, "off-chain receipt selected a reducer-authorized child");
+    const resultingBalances = this.resultingBalancesByChild.get(bytesToHex(selected.childNodeId));
+    assert.ok(resultingBalances, "off-chain transition supplied exact resulting balances");
+    this.tableBalances = structuredClone(resultingBalances);
+    this.runtimeEdges = [];
+    this.selectedRuntimeEdge = null;
+    this.resultingBalancesByChild.clear();
+    this.pendingBroadcast = null;
     this.phase = this.currentTerminal ? GamePhase.SETTLED : GamePhase.ACTIVE;
   }
 
@@ -847,30 +978,17 @@ async function activatedPair(label) {
 
   assert.equal(flowA.view().readyForActivation, true);
   assert.equal(flowB.view().readyForActivation, true);
-  assert.equal(flowA.view().stage, "ready");
-  assert.equal(flowB.view().stage, "ready");
+  assert.equal(flowA.view().stage, "active");
+  assert.equal(flowB.view().stage, "active");
   telemetry.automaticActivationAuthorizations = [flowA, flowB].filter(
     (flow) => flow.view().activationSignatureSent,
   ).length;
   assert.equal(telemetry.setupPlayerClicks, 0, "setup did not ask either player to click");
   assert.equal(telemetry.automaticActivationAuthorizations, 2);
-  assert.equal(flowA.view().phase, GamePhase.AWAITING_ACTIVATION);
-  assert.equal(flowB.view().phase, GamePhase.AWAITING_ACTIVATION);
-  assert.ok(sameBytes(flowA.view().pendingBroadcast.transaction, ACTIVATION_TRANSACTION));
-  assert.ok(sameBytes(flowB.view().pendingBroadcast.transaction, ACTIVATION_TRANSACTION));
-
-  const activationFact = {
-    type: GameEventType.SPEND_CONFIRMED,
-    profileId: nodeId(0xf0),
-    spentOutpoint: { displayTxid: nodeId(0xaa), vout: 0 },
-    spendingDisplayTxid: nodeId(0xac),
-    spendingTransaction: Uint8Array.from(ACTIVATION_TRANSACTION),
-    inputIndex: 0,
-    confirmedIn: { height: 101, displayHash: nodeId(0x01) },
-    observedTip: { height: 101, displayHash: nodeId(0x01) },
-  };
-  await flowA.confirmSpend(activationFact);
-  await flowB.confirmSpend(activationFact);
+  assert.equal(flowA.view().phase, GamePhase.ACTIVE);
+  assert.equal(flowB.view().phase, GamePhase.ACTIVE);
+  assert.equal(flowA.view().pendingBroadcast, undefined);
+  assert.equal(flowB.view().pendingBroadcast, undefined);
   assert.equal(flowA.view().phase, GamePhase.ACTIVE);
   assert.equal(flowB.view().phase, GamePhase.ACTIVE);
   assert.deepEqual(flowA.view().cards.localHole, [null, null]);
@@ -1022,42 +1140,10 @@ async function confirmRuntimeStep(pair, {
 
   pair.games[authorizer].selectRuntimeEdge(selected.childNodeId);
   await pair.flows[authorizer].authorizeEdge(bytesToHex(selected.childNodeId));
-  const pending = pair.flows[authorizer].view().pendingBroadcast;
-  assert.ok(pending?.transaction, "Rust/Wasm reducer returned an opaque transaction");
-  assert.ok(sameBytes(pending.txid, selected.childNodeId));
-  assert.equal(
-    pair.flows[1 - authorizer].view().pendingBroadcast,
-    undefined,
-    "only the authorizing browser receives the opaque transaction",
-  );
-
-  const publishAction = nextGameplayPublishAction(gameplayPublishState(pending, false));
-  assert.equal(publishAction?.pendingTxid, bytesToHex(selected.childNodeId));
-  pair.telemetry.publishedTransactions.push(publishAction.pendingTxid);
-  assert.equal(
-    nextGameplayPublishAction(gameplayPublishState(pending, true)),
-    null,
-    "the automatic publisher submits each transaction once",
-  );
-
-  const height = pair.nextHeight;
-  pair.nextHeight += 1;
-  const fact = {
-    type: GameEventType.SPEND_CONFIRMED,
-    profileId: nodeId(0xf0),
-    spentOutpoint: { displayTxid: nodeId(0xbb), vout: 0 },
-    spendingDisplayTxid: Uint8Array.from(pending.txid),
-    spendingTransaction: Uint8Array.from(pending.transaction),
-    inputIndex: 0,
-    confirmedIn: { height, displayHash: nodeId(0x02) },
-    observedTip: { height, displayHash: nodeId(0x02) },
-  };
-  await pair.flows[0].confirmSpend(fact);
-  await pair.flows[1].confirmSpend(fact);
-  pair.telemetry.confirmedTransactions.push({
-    txid: bytesToHex(fact.spendingDisplayTxid),
-    height,
-  });
+  await pair.hub.drain();
+  assert.equal(pair.flows[0].view().pendingBroadcast, undefined);
+  assert.equal(pair.flows[1].view().pendingBroadcast, undefined);
+  pair.telemetry.publishedTransactions.push(bytesToHex(selected.childNodeId));
   assert.equal(pair.flows[0].view().phase, terminal ? GamePhase.SETTLED : GamePhase.ACTIVE);
   assert.equal(pair.flows[1].view().phase, terminal ? GamePhase.SETTLED : GamePhase.ACTIVE);
   assertTableBalances(pair, resultingBalances);
@@ -1116,16 +1202,7 @@ assert.deepEqual(
 );
 assert.equal(showdown.telemetry.automaticEdges.length, 10);
 assert.equal(showdown.telemetry.publishedTransactions.length, fullHand.length);
-assert.deepEqual(
-  showdown.telemetry.confirmedTransactions.map(({ height }) => height),
-  Array.from({ length: fullHand.length }, (_, index) => 102 + index),
-  "every opaque gameplay transaction confirms once, in order, before the next edge",
-);
-assert.deepEqual(
-  showdown.telemetry.confirmedTransactions.map(({ txid }) => txid),
-  showdown.telemetry.publishedTransactions,
-  "the confirmed transaction sequence exactly matches the auto-published sequence",
-);
+assert.equal(showdown.telemetry.confirmedTransactions.length, 0);
 
 const fold = await activatedPair("fold");
 await confirmRuntimeStep(fold, {
@@ -1137,26 +1214,7 @@ await confirmRuntimeStep(fold, {
   terminal: true,
 });
 
-const timeout = await activatedPair("timeout");
-const timeoutHeight = 144;
-const tipEvent = {
-  type: GameEventType.TIP_OBSERVED,
-  profileId: nodeId(0xf0),
-  block: { height: timeoutHeight, displayHash: nodeId(0x03) },
-};
-await timeout.flows[0].observeTip(tipEvent);
-await timeout.flows[1].observeTip(tipEvent);
-await confirmRuntimeStep(timeout, {
-  edges: [runtimeEdge(110, { name: "timeout", timeoutKind: 0 }, { name: "timeout", beneficiary: 1 })],
-  authorizer: 1,
-  resultingBalances: { aliceStackSat: 19_900, bobStackSat: 20_100, potSat: 0 },
-  cards: {},
-  terminal: true,
-  timeoutMaturesAt: timeoutHeight,
-  timeoutClaim: true,
-});
-
-const allPairs = [showdown, fold, timeout];
+const allPairs = [showdown, fold];
 for (const pair of allPairs) {
   for (const role of [0, 1]) {
     const calls = pair.hub.workers.get(role).calls;
@@ -1170,7 +1228,7 @@ for (const pair of allPairs) {
       "attestInventory",
       "makeInventoryReady",
       "signActivation",
-      "confirmActivation",
+      "openOffchainRoot",
     ]) {
       assert.ok(calls.includes(required), `${pair.hub.label} role ${role} called ${required}`);
     }
@@ -1178,7 +1236,6 @@ for (const pair of allPairs) {
       calls.some((value) => value.startsWith("acceptSessionEvent:")),
       `${pair.hub.label} role ${role} used the opaque SessionEvent ingress`,
     );
-    assert.ok(calls.includes("confirmChild"), `${pair.hub.label} role ${role} confirmed a child`);
   }
 }
 
@@ -1201,10 +1258,14 @@ for (const builder of [
   assert.ok(showdownCalls.includes(builder), `100-BB full hand exercised ${builder}`);
 }
 assert.ok(fold.hub.workers.get(0).calls.includes("action:0"), "fold action reached Rust/Wasm");
-assert.ok(timeout.hub.workers.get(1).calls.includes("buildTimeout"), "timeout builder reached Rust/Wasm");
+const recoveryView = await fold.flows[0].recoverOnchain();
+assert.equal(recoveryView.recovery.step, 0);
+assert.equal(recoveryView.recovery.total, 2);
+assert.deepEqual(recoveryView.recovery.transaction, ACTIVATION_TRANSACTION);
+assert.ok(fold.hub.workers.get(0).calls.includes("disputePackage"));
 
 await Promise.all(allPairs.flatMap((pair) => pair.flows.map((flow) => flow.cancel())));
 
 process.stdout.write(
-  "browser CHAIN coordinator actual-order mock: automatic setup + full 100-BB hand + fold + timeout ok\n",
+  "browser CHAIN coordinator actual-order mock: setup + full 100-BB hand + fold stayed off-chain\n",
 );

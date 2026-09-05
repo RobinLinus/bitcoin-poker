@@ -48,7 +48,9 @@ use bp52_chain_runtime::{
     AuthorizedGraph, BitcoinSigner, ChainBackend, ChainMonitor, MonitorState,
     PreauthorizationSource, PublicPreimageStore, RuntimeError, SecretEraser, SignerError,
     build_action_witness, build_alice_showdown_witness, build_bob_payout_witness,
-    build_reveal_witness, build_timeout_witness,
+    build_reveal_witness, build_selected_action_witness, build_selected_alice_showdown_witness,
+    build_selected_bob_payout_witness, build_selected_reveal_witness, build_timeout_witness,
+    sign_selected_action,
 };
 use bp52_chain_types::{
     Action, ChainGameDescriptor, EdgeKind, LogicalOutput, NodeId, Role, ShowdownOutcome,
@@ -82,9 +84,10 @@ const INIT_MAGIC: &[u8; 8] = b"BP52CH05";
 const PROFILE_HEADS_UP_FIXED_LIMIT_V1: u8 = 1;
 const CARD_MAGIC: &[u8; 8] = b"BP52CP01";
 const CONTEXT_MAGIC: &[u8; 8] = b"BP52CT01";
-const SNAPSHOT_MAGIC: &[u8; 8] = b"BP52CS04";
-const SNAPSHOT_BODY_MAGIC: &[u8; 8] = b"BP52SB04";
+const SNAPSHOT_MAGIC: &[u8; 8] = b"BP52CS05";
+const SNAPSHOT_BODY_MAGIC: &[u8; 8] = b"BP52SB05";
 const RUNTIME_STATUS_MAGIC: &[u8; 8] = b"BP52RS01";
+const DISPUTE_PACKAGE_MAGIC: &[u8; 8] = b"BP52DP01";
 const SESSION_EVENT_RESULT_MAGIC: &[u8; 8] = b"BP52SE02";
 const SETUP_EXCHANGE_MAGIC: &[u8; 8] = b"BP52CX01";
 const PREAUTHORIZATION_PLAN_MAGIC: &[u8; 8] = b"BP52PP01";
@@ -97,7 +100,7 @@ const LAMPORT_GENERATION_PLAN_MAGIC: &[u8; 8] = b"BP52LG01";
 const LAMPORT_GENERATION_BATCH_MAGIC: &[u8; 8] = b"BP52LB01";
 const LAMPORT_GENERATION_SHARD_MAGIC: &[u8; 8] = b"BP52LS01";
 const LAMPORT_GENERATION_RESULT_MAGIC: &[u8; 8] = b"BP52LR01";
-const SNAPSHOT_VERSION: u16 = 4;
+const SNAPSHOT_VERSION: u16 = 5;
 const INVENTORY_TAG: &[u8] = b"BP52/runtime-inventory-ready/v1";
 const PEER_INVENTORY_TAG: &[u8] = b"BP52/chain-inventory-ready/v1";
 const ERASURE_TAG: &[u8] = b"BP52/secret-erasure/v1";
@@ -230,6 +233,15 @@ struct AuthorizationCache {
     witness: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingActionSelection {
+    parent_node_id: NodeId,
+    child_node_id: NodeId,
+    action: Action,
+    actor: Role,
+    actor_signature: DefaultSighashSignature,
+}
+
 struct ErasureCache {
     parent_node_id: NodeId,
     child_txid: [u8; 32],
@@ -288,6 +300,7 @@ struct ChainEngine {
     pending_local_lamport_generation: bool,
     graph_summary: Option<CompiledGraphSummary>,
     graph_window: Option<MaterializedGraphWindow>,
+    confirmed_graph_window: Option<MaterializedGraphWindow>,
     setup_signature_requests: Option<OracleSignatureRequests>,
     root_commitments: [Option<SignedCommitment>; 2],
     root_openings: [Option<GraphRootOpening>; 2],
@@ -305,7 +318,12 @@ struct ChainEngine {
     inventory_ready: [Option<[u8; 64]>; 2],
     monitor: Option<ChainMonitor>,
     public_preimages: Option<PublicPreimageStore>,
+    offchain_activation: Option<Vec<u8>>,
+    offchain_head: Option<NodeId>,
+    offchain_witnesses: Vec<Vec<u8>>,
+    offchain_transactions: Vec<Vec<u8>>,
     authorization_cache: Option<AuthorizationCache>,
+    pending_action_selection: Option<PendingActionSelection>,
     last_erasure: Option<ErasureCache>,
     confirmed_history: Vec<ConfirmedRecord>,
 }
@@ -467,6 +485,7 @@ impl ChainEngine {
             pending_local_lamport_generation: false,
             graph_summary: None,
             graph_window: None,
+            confirmed_graph_window: None,
             setup_signature_requests: None,
             root_commitments: std::array::from_fn(|_| None),
             root_openings: std::array::from_fn(|_| None),
@@ -484,7 +503,12 @@ impl ChainEngine {
             inventory_ready: std::array::from_fn(|_| None),
             monitor: None,
             public_preimages: None,
+            offchain_activation: None,
+            offchain_head: None,
+            offchain_witnesses: Vec::new(),
+            offchain_transactions: Vec::new(),
             authorization_cache: None,
+            pending_action_selection: None,
             last_erasure: None,
             confirmed_history: Vec::new(),
         })
@@ -1720,8 +1744,9 @@ impl ChainEngine {
         }
         verify_signed_activation(self, &transaction)?;
         let graph = self
-            .graph_window
+            .confirmed_graph_window
             .as_ref()
+            .or(self.graph_window.as_ref())
             .ok_or_else(|| "root graph window is unavailable".to_owned())?;
         let monitor = self
             .monitor
@@ -1741,8 +1766,131 @@ impl ChainEngine {
             tip_height,
             transaction: transaction_bytes,
         });
+        if self.offchain_head == Some(graph.summary().root_node_id()) {
+            self.offchain_head = None;
+        }
+        if self.offchain_head.is_none() {
+            self.phase = Phase::Active;
+        }
+        self.card_projection()
+    }
+
+    /// Retain the fully signed activation as the enforceable dispute root
+    /// without publishing it. Normal cooperative play starts from this local
+    /// root and touches Bitcoin only if recovery is requested.
+    fn open_offchain_root(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let transaction: Transaction = deserialize(bytes).map_err(|error| error.to_string())?;
+        if serialize(&transaction) != bytes {
+            return Err("off-chain activation transaction is not canonical".to_owned());
+        }
+        verify_signed_activation(self, &transaction)?;
+        if let Some(existing) = &self.offchain_activation {
+            if existing != bytes {
+                return self.halt("conflicting off-chain activation root");
+            }
+            return self.card_projection();
+        }
+        if self.confirmed_history.first().is_some() {
+            return Err("off-chain root cannot replace a confirmed activation".to_owned());
+        }
+        let root = self.graph_summary_ref()?.root_node_id();
+        if self.graph_ref()?.active_node_id() != root {
+            return Err("off-chain root graph page is not at the gameplay root".to_owned());
+        }
+        self.offchain_activation = Some(bytes.to_vec());
+        self.offchain_head = Some(root);
+        self.offchain_witnesses.clear();
+        self.offchain_transactions.clear();
+        self.confirmed_graph_window = Some(self.graph_ref()?.clone());
         self.phase = Phase::Active;
         self.card_projection()
+    }
+
+    fn advance_offchain_witness(&mut self, witness_bytes: &[u8]) -> Result<Vec<u8>, String> {
+        if self
+            .offchain_witnesses
+            .last()
+            .is_some_and(|existing| existing == witness_bytes)
+        {
+            return Ok(Vec::new());
+        }
+        let parent_node_id = self
+            .offchain_head
+            .ok_or_else(|| "off-chain gameplay root is unavailable".to_owned())?;
+        let witness = bp52_chain_runtime::Witness::decode(witness_bytes)
+            .map_err(|error| error.to_string())?;
+        if witness.node_id() != parent_node_id {
+            return Err("off-chain witness does not spend the current ratchet head".to_owned());
+        }
+        let mut next_public = self
+            .public_preimages
+            .clone()
+            .ok_or_else(|| "public preimage store is unavailable".to_owned())?;
+        let (child_node_id, transaction, terminal) = {
+            let graph = self.graph_ref()?;
+            let prepared = bp52_chain_runtime::apply_offchain_witness(
+                graph,
+                parent_node_id,
+                &witness,
+                &mut next_public,
+            )
+            .map_err(|error| error.to_string())?;
+            let child_node_id = prepared.endpoints().1;
+            let terminal = graph
+                .node(child_node_id)
+                .ok_or_else(|| "off-chain child node is unavailable".to_owned())?
+                .node_kind
+                .is_terminal();
+            (child_node_id, serialize(prepared.transaction()), terminal)
+        };
+        let prepared = self.prepare_graph()?;
+        let activation = prepared
+            .canonical_activation_template()
+            .map_err(|error| error.to_string())?;
+        let summary = self.graph_summary_ref()?.clone();
+        let next_window =
+            compile_graph_oracle_window(prepared, activation, &summary, child_node_id)
+                .map_err(|error| error.to_string())?
+                .window;
+        self.public_preimages = Some(next_public);
+        self.offchain_head = Some(child_node_id);
+        self.offchain_witnesses.push(witness_bytes.to_vec());
+        self.offchain_transactions.push(transaction.clone());
+        self.authorization_cache = None;
+        self.pending_action_selection = None;
+        self.graph_window = Some(next_window);
+        self.phase = if terminal {
+            Phase::Settled
+        } else {
+            Phase::Active
+        };
+        Ok(transaction)
+    }
+
+    fn offchain_dispute_package(&self) -> Result<Vec<u8>, String> {
+        let activation = self
+            .offchain_activation
+            .as_ref()
+            .ok_or_else(|| "off-chain dispute root is unavailable".to_owned())?;
+        if self.offchain_witnesses.len() != self.offchain_transactions.len() {
+            return Err("off-chain dispute history is inconsistent".to_owned());
+        }
+        let mut writer = Writer::new();
+        writer.write_bytes(DISPUTE_PACKAGE_MAGIC);
+        writer.write_byte_vector(activation).map_err(codec)?;
+        writer.write_u16(
+            u16::try_from(self.offchain_transactions.len())
+                .map_err(|_| "off-chain dispute path is too long".to_owned())?,
+        );
+        for transaction in &self.offchain_transactions {
+            writer.write_byte_vector(transaction).map_err(codec)?;
+        }
+        writer.write_bytes(
+            &self
+                .offchain_head
+                .ok_or_else(|| "off-chain dispute head is unavailable".to_owned())?,
+        );
+        Ok(writer.into_bytes())
     }
 
     fn observe_tip(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
@@ -1756,14 +1904,7 @@ impl ChainEngine {
     }
 
     fn build_action(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
-        let action = match exact_u8(bytes)? {
-            0 => Action::Fold,
-            1 => Action::Check,
-            2 => Action::Call,
-            3 => Action::Bet,
-            4 => Action::Raise,
-            _ => return Err("unknown betting action".to_owned()),
-        };
+        let action = decode_action(exact_u8(bytes)?)?;
         let request = authorization_request(0, bytes);
         if let Some(cached) = self.cached_authorization(&request)? {
             return Ok(cached);
@@ -1796,6 +1937,199 @@ impl ChainEngine {
         self.retain_authorization(node_id, request, witness)
     }
 
+    /// Select one betting child and release only the actor's exact signature.
+    /// The selection is checkpointed by the Worker before the artifact is
+    /// returned, so a reload can never authorize a sibling from this parent.
+    fn begin_selected_action(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        if self.phase != Phase::Active {
+            return Err("betting selection is unavailable outside active gameplay".to_owned());
+        }
+        let mut reader = Reader::new(bytes);
+        let child_node_id = reader.read_array::<32>().map_err(codec)?;
+        let action = decode_action(reader.read_u8().map_err(codec)?)?;
+        reader.finish().map_err(codec)?;
+        let parent_node_id = self.active_node_id()?;
+        let selection = if let Some(existing) = self.pending_action_selection {
+            if existing.parent_node_id != parent_node_id
+                || existing.child_node_id != child_node_id
+                || existing.action != action
+                || existing.actor != self.local_role
+            {
+                return self.halt("a sibling betting edge was already selected at this node");
+            }
+            existing
+        } else {
+            if self.authorization_cache.is_some() {
+                return self.halt("a runtime edge was already authorized at this node");
+            }
+            let signature = {
+                let graph = self.graph_ref()?;
+                let signer = LocalSigner::new(self.local_role, &self.secret);
+                sign_selected_action(
+                    graph,
+                    parent_node_id,
+                    child_node_id,
+                    action,
+                    self.local_role,
+                    self.local_role,
+                    &signer,
+                )
+                .map_err(|error| error.to_string())?
+            };
+            let selected = PendingActionSelection {
+                parent_node_id,
+                child_node_id,
+                action,
+                actor: self.local_role,
+                actor_signature: signature,
+            };
+            self.pending_action_selection = Some(selected);
+            selected
+        };
+        Ok(encode_action_request(selection))
+    }
+
+    /// Validate the acting peer's selected edge, countersign only that edge,
+    /// and retain the complete witness before returning the response.
+    fn accept_selected_action_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        if self.phase != Phase::Active {
+            return Err("betting selection is unavailable outside active gameplay".to_owned());
+        }
+        let selection = decode_action_request(bytes)?;
+        if selection.actor != self.local_role.other() {
+            return Err("betting request actor differs from the authenticated peer".to_owned());
+        }
+        if selection.parent_node_id != self.active_node_id()? {
+            return Err("betting request does not spend the active node".to_owned());
+        }
+        let request = authorization_request(5, bytes);
+        if let Some(cache) = &self.authorization_cache {
+            if cache.node_id != selection.parent_node_id || cache.request != request {
+                return self.halt("a sibling betting edge was already authorized at this node");
+            }
+            let witness = bp52_chain_runtime::Witness::decode(&cache.witness)
+                .map_err(|error| error.to_string())?;
+            return encode_action_response_from_witness(selection, &witness);
+        }
+        if self.pending_action_selection.is_some() {
+            return self.halt("both players attempted to act at the same betting node");
+        }
+        let local_signature = {
+            let graph = self.graph_ref()?;
+            let signer = LocalSigner::new(self.local_role, &self.secret);
+            sign_selected_action(
+                graph,
+                selection.parent_node_id,
+                selection.child_node_id,
+                selection.action,
+                selection.actor,
+                self.local_role,
+                &signer,
+            )
+            .map_err(|error| error.to_string())?
+        };
+        let (alice_signature, bob_signature) = match selection.actor {
+            Role::Alice => (selection.actor_signature, local_signature),
+            Role::Bob => (local_signature, selection.actor_signature),
+        };
+        let witness = {
+            let graph = self.graph_ref()?;
+            let witness = build_selected_action_witness(
+                graph,
+                selection.parent_node_id,
+                selection.child_node_id,
+                selection.action,
+                selection.actor,
+                alice_signature,
+                bob_signature,
+            )
+            .map_err(|error| error.to_string())?;
+            if self.offchain_head.is_some() {
+                bp52_chain_runtime::attach_offchain_witness(
+                    graph,
+                    selection.parent_node_id,
+                    &witness,
+                )
+                .map_err(|error| error.to_string())?;
+            } else {
+                let active = self
+                    .monitor
+                    .as_ref()
+                    .ok_or_else(|| "chain monitor is unavailable".to_owned())?
+                    .confirmed_active_node(graph)
+                    .map_err(|error| error.to_string())?;
+                bp52_chain_runtime::attach_witness(graph, &active, &witness)
+                    .map_err(|error| error.to_string())?;
+            }
+            witness
+        };
+        let response = encode_action_response_from_witness(selection, &witness)?;
+        self.retain_authorization(
+            selection.parent_node_id,
+            request,
+            witness.encode().map_err(|error| error.to_string())?,
+        )?;
+        if self.offchain_head.is_some() {
+            self.advance_offchain_witness(&witness.encode().map_err(|error| error.to_string())?)?;
+        }
+        Ok(response)
+    }
+
+    /// Complete the actor side of a selected betting exchange.
+    fn accept_selected_action_response(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        if self.phase != Phase::Active {
+            return Err("betting selection is unavailable outside active gameplay".to_owned());
+        }
+        let (selection, alice_signature, bob_signature) = decode_action_response(bytes)?;
+        let pending = self
+            .pending_action_selection
+            .ok_or_else(|| "no betting selection awaits a countersignature".to_owned())?;
+        if selection != pending || selection.actor != self.local_role {
+            return self.halt("betting countersignature differs from the durable selection");
+        }
+        let witness = {
+            let graph = self.graph_ref()?;
+            let witness = build_selected_action_witness(
+                graph,
+                selection.parent_node_id,
+                selection.child_node_id,
+                selection.action,
+                selection.actor,
+                alice_signature,
+                bob_signature,
+            )
+            .map_err(|error| error.to_string())?;
+            if self.offchain_head.is_some() {
+                bp52_chain_runtime::attach_offchain_witness(
+                    graph,
+                    selection.parent_node_id,
+                    &witness,
+                )
+                .map_err(|error| error.to_string())?;
+            } else {
+                let active = self
+                    .monitor
+                    .as_ref()
+                    .ok_or_else(|| "chain monitor is unavailable".to_owned())?
+                    .confirmed_active_node(graph)
+                    .map_err(|error| error.to_string())?;
+                bp52_chain_runtime::attach_witness(graph, &active, &witness)
+                    .map_err(|error| error.to_string())?;
+            }
+            witness.encode().map_err(|error| error.to_string())?
+        };
+        self.pending_action_selection = None;
+        self.retain_authorization(
+            selection.parent_node_id,
+            authorization_request(6, bytes),
+            witness.clone(),
+        )?;
+        if self.offchain_head.is_some() {
+            self.advance_offchain_witness(&witness)?;
+        }
+        Ok(witness)
+    }
+
     fn build_advance(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
         let _ = bytes;
         Err("the fixed-limit profile has no advance transitions".to_owned())
@@ -1824,14 +2158,7 @@ impl ChainEngine {
         };
         let graph = AuthorizedGraph::new(graph, &preauthorizations);
         let signer = LocalSigner::new(self.local_role, &self.secret);
-        let monitor = self
-            .monitor
-            .as_ref()
-            .ok_or_else(|| "chain monitor is unavailable".to_owned())?;
-        let active = monitor
-            .confirmed_active_node(&graph)
-            .map_err(|error| error.to_string())?;
-        let pattern = reveal_pattern_for_active(&graph, active.node_id())?;
+        let pattern = reveal_pattern_for_active(&graph, node_id)?;
         if pattern.revealer() != self.local_role {
             return Err("the peer is the required revealer at this node".to_owned());
         }
@@ -1849,9 +2176,19 @@ impl ChainEngine {
                     .ok_or_else(|| "retained DEAL preimage is unavailable".to_owned())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let witness = build_reveal_witness(&graph, &active, &preimages, &signer)
-            .and_then(|witness| witness.encode())
-            .map_err(|error| error.to_string())?;
+        let witness = if self.offchain_head.is_some() {
+            build_selected_reveal_witness(&graph, node_id, &preimages, &signer)
+        } else {
+            let active = self
+                .monitor
+                .as_ref()
+                .ok_or_else(|| "chain monitor is unavailable".to_owned())?
+                .confirmed_active_node(&graph)
+                .map_err(|error| error.to_string())?;
+            build_reveal_witness(&graph, &active, &preimages, &signer)
+        }
+        .and_then(|witness| witness.encode())
+        .map_err(|error| error.to_string())?;
         self.retain_authorization(node_id, request, witness)
     }
 
@@ -1867,6 +2204,7 @@ impl ChainEngine {
         let node_id = self.active_node_id()?;
         let (key_index, mut key) =
             self.derive_active_lamport_key(LamportPurpose::AliceScore24Bit)?;
+        let offchain = self.offchain_head.is_some();
         let built = {
             let graph = self
                 .graph_window
@@ -1893,13 +2231,19 @@ impl ChainEngine {
                 .retained_preimages
                 .as_ref()
                 .ok_or_else(|| "retained DEAL preimages are unavailable".to_owned())?;
-            let monitor = self
-                .monitor
-                .as_mut()
-                .ok_or_else(|| "chain monitor is unavailable".to_owned())?;
-            build_alice_showdown_witness(
-                &graph, monitor, public, retained, subset, score, &mut key, &signer,
-            )
+            if offchain {
+                build_selected_alice_showdown_witness(
+                    &graph, node_id, public, retained, subset, score, &mut key, &signer,
+                )
+            } else {
+                let monitor = self
+                    .monitor
+                    .as_mut()
+                    .ok_or_else(|| "chain monitor is unavailable".to_owned())?;
+                build_alice_showdown_witness(
+                    &graph, monitor, public, retained, subset, score, &mut key, &signer,
+                )
+            }
             .and_then(|witness| witness.encode())
         };
         self.lamport_inventory
@@ -1925,6 +2269,7 @@ impl ChainEngine {
         }
         let node_id = self.active_node_id()?;
         let (key_index, mut key) = self.derive_active_lamport_key(LamportPurpose::BobScore24Bit)?;
+        let offchain = self.offchain_head.is_some();
         let built = {
             let graph = self
                 .graph_window
@@ -1951,13 +2296,19 @@ impl ChainEngine {
                 .as_ref()
                 .ok_or_else(|| "retained DEAL preimages are unavailable".to_owned())?;
             let signer = LocalSigner::new(self.local_role, &self.secret);
-            let monitor = self
-                .monitor
-                .as_mut()
-                .ok_or_else(|| "chain monitor is unavailable".to_owned())?;
-            build_bob_payout_witness(
-                &graph, monitor, public, retained, subset, score, outcome, &mut key, &signer,
-            )
+            if offchain {
+                build_selected_bob_payout_witness(
+                    &graph, node_id, public, retained, subset, score, outcome, &mut key, &signer,
+                )
+            } else {
+                let monitor = self
+                    .monitor
+                    .as_mut()
+                    .ok_or_else(|| "chain monitor is unavailable".to_owned())?;
+                build_bob_payout_witness(
+                    &graph, monitor, public, retained, subset, score, outcome, &mut key, &signer,
+                )
+            }
             .and_then(|witness| witness.encode())
         };
         self.lamport_inventory
@@ -2033,8 +2384,9 @@ impl ChainEngine {
             return Err("confirmed child transaction is not canonical".to_owned());
         }
         let graph = self
-            .graph_window
+            .confirmed_graph_window
             .as_ref()
+            .or(self.graph_window.as_ref())
             .ok_or_else(|| "active graph window is unavailable".to_owned())?;
         let peer_opening = self.preauth_openings[role_index(self.local_role.other())]
             .as_ref()
@@ -2113,11 +2465,13 @@ impl ChainEngine {
                 &mut eraser,
             )
             .map_err(|error| error.to_string())?;
-        self.phase = match monitor.state() {
-            MonitorState::Terminal { .. } => Phase::Settled,
-            MonitorState::Active { .. } => Phase::Active,
-            _ => Phase::Halted,
-        };
+        if self.offchain_head.is_none() {
+            self.phase = match monitor.state() {
+                MonitorState::Terminal { .. } => Phase::Settled,
+                MonitorState::Active { .. } => Phase::Active,
+                _ => Phase::Halted,
+            };
+        }
         let digest = erasure_digest(
             self.shared_config_hash,
             graph.summary().manifest().chain_game_id,
@@ -2126,7 +2480,14 @@ impl ChainEngine {
         );
         let attestation = self.sign_bip340(digest)?;
         self.authorization_cache = None;
-        self.graph_window = Some(next_window);
+        self.pending_action_selection = None;
+        if self.offchain_head.is_none() {
+            self.graph_window = Some(next_window.clone());
+        }
+        self.confirmed_graph_window = Some(next_window);
+        if self.offchain_head == Some(child_id) {
+            self.offchain_head = None;
+        }
         self.last_erasure = Some(ErasureCache {
             parent_node_id: parent_id,
             child_txid: transaction.compute_txid().to_byte_array(),
@@ -2144,7 +2505,11 @@ impl ChainEngine {
         if !matches!(self.phase, Phase::Active | Phase::Settled) {
             return Err("confirmed-state receipt is unavailable before activation".to_owned());
         }
-        let graph = self.graph_ref()?;
+        let graph = self
+            .confirmed_graph_window
+            .as_ref()
+            .or(self.graph_window.as_ref())
+            .ok_or_else(|| "confirmed graph window is unavailable".to_owned())?;
         let summary = graph.summary();
         let monitor = self
             .monitor
@@ -2221,6 +2586,81 @@ impl ChainEngine {
             record,
             balances,
             confirmed_height,
+            edges,
+            self.local_role,
+        );
+        let keypair = self.secret.keypair()?;
+        let secp = Secp256k1::new();
+        issue_confirmed_state_receipt(self.verified_descriptor_ref()?, unsigned, |digest| {
+            secp.sign_schnorr_no_aux_rand(&Message::from_digest(digest), &keypair)
+                .serialize()
+        })
+        .and_then(|receipt| receipt.encode_to_vec().map_err(Into::into))
+        .map_err(|error: bp52_chain_compiler::CompilerError| error.to_string())
+    }
+
+    fn offchain_state_receipt(&self) -> Result<Vec<u8>, String> {
+        let node_id = self
+            .offchain_head
+            .ok_or_else(|| "off-chain state receipt is unavailable".to_owned())?;
+        let graph = self.graph_ref()?;
+        if graph.active_node_id() != node_id {
+            return Err("off-chain graph page differs from the ratchet head".to_owned());
+        }
+        let summary = graph.summary();
+        let record = graph
+            .node(node_id)
+            .ok_or_else(|| "off-chain node is absent from the active graph page".to_owned())?
+            .clone();
+        let (spent_outpoint, state_outpoint, state_output) =
+            if node_id == summary.root_node_id() {
+                (
+                    consensus_outpoint_bytes(summary.origin_outpoint()),
+                    consensus_outpoint_bytes(summary.root_state_outpoint()),
+                    Some(logical_output(summary.root_state_output())),
+                )
+            } else {
+                let transaction = record
+                    .transaction
+                    .as_ref()
+                    .ok_or_else(|| "off-chain child has no creating transaction".to_owned())?;
+                let mut outpoint = [0; 36];
+                outpoint[..32].copy_from_slice(&transaction.txid);
+                let output =
+                    if record.node_kind.is_terminal() {
+                        None
+                    } else {
+                        Some(transaction.outputs.first().cloned().ok_or_else(|| {
+                            "off-chain state transaction has no output".to_owned()
+                        })?)
+                    };
+                (transaction.input_outpoint, outpoint, output)
+            };
+        let edges = record
+            .child_node_ids
+            .iter()
+            .map(|child| {
+                let edge = graph
+                    .edge(node_id, *child)
+                    .ok_or_else(|| "off-chain page omits an advertised edge".to_owned())?
+                    .clone();
+                let sighash = graph
+                    .signature_digest(node_id, *child)
+                    .map_err(|error| error.to_string())?;
+                Ok(PublicEdgeReceipt { edge, sighash })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let unsigned = bp52_chain_compiler::ConfirmedStateReceipt::unsigned(
+            self.shared_config_hash,
+            summary.manifest().chain_game_id,
+            summary.manifest().graph_root,
+            record.parent_node_id,
+            spent_outpoint,
+            state_outpoint,
+            state_output,
+            record,
+            public_state_balances(graph.active_state()),
+            0,
             edges,
             self.local_role,
         );
@@ -2424,7 +2864,9 @@ impl ChainEngine {
         let ready_mask = u8::from(self.inventory_ready[0].is_some())
             | (u8::from(self.inventory_ready[1].is_some()) << 1);
         writer.write_u8(ready_mask);
-        writer.write_u8(u8::from(self.authorization_cache.is_some()));
+        writer.write_u8(u8::from(
+            self.authorization_cache.is_some() || self.pending_action_selection.is_some(),
+        ));
         writer.write_u8(u8::from(self.last_erasure.is_some()));
         Ok(writer.into_bytes())
     }
@@ -2800,6 +3242,30 @@ impl ChainEngine {
                 self.accept_inventory_ready(&artifact)?;
             }
         }
+        if state.offchain_witnesses.len() != state.offchain_transactions.len() {
+            return Err("checkpoint off-chain witnesses and transactions disagree".to_owned());
+        }
+        if state.offchain_activation.is_empty() {
+            if !state.offchain_witnesses.is_empty() || !state.offchain_transactions.is_empty() {
+                return Err(
+                    "checkpoint has off-chain descendants without an activation root".to_owned(),
+                );
+            }
+        } else {
+            self.open_offchain_root(&state.offchain_activation)?;
+            for (witness, transaction) in state
+                .offchain_witnesses
+                .iter()
+                .zip(&state.offchain_transactions)
+            {
+                let replayed = self.advance_offchain_witness(witness)?;
+                if &replayed != transaction {
+                    return Err(
+                        "checkpoint off-chain transaction differs from witness replay".to_owned(),
+                    );
+                }
+            }
+        }
         for confirmation in &state.confirmations {
             let (kind, confirmed_height, tip_height, transaction) = match confirmation {
                 StoredConfirmation::Activation {
@@ -2827,6 +3293,7 @@ impl ChainEngine {
             usize::from(state.lamport_key_count),
             &state.lamport_key_states,
         )? && state.authorization.is_none()
+            && state.offchain_witnesses.is_empty()
         {
             return Err("issued checkpoint Lamport key has no cached witness".to_owned());
         }
@@ -2836,6 +3303,34 @@ impl ChainEngine {
                 return Err("checkpoint authorization cache is not for the active node".to_owned());
             }
             self.authorization_cache = Some(cache);
+        }
+        if let Some(selection) = state.pending_action_selection {
+            if self.authorization_cache.is_some()
+                || selection.parent_node_id != self.active_node_id()?
+                || selection.actor != self.local_role
+            {
+                return Err("checkpoint betting selection is inconsistent".to_owned());
+            }
+            let expected = {
+                let graph = self.graph_ref()?;
+                let signer = LocalSigner::new(self.local_role, &self.secret);
+                sign_selected_action(
+                    graph,
+                    selection.parent_node_id,
+                    selection.child_node_id,
+                    selection.action,
+                    selection.actor,
+                    self.local_role,
+                    &signer,
+                )
+                .map_err(|error| error.to_string())?
+            };
+            if expected != selection.actor_signature {
+                return Err(
+                    "checkpoint betting signature differs from its selected edge".to_owned(),
+                );
+            }
+            self.pending_action_selection = Some(selection);
         }
         if let Some(erasure) = state.erasure {
             self.verify_identity_signature(
@@ -2974,11 +3469,34 @@ impl ChainEngine {
                 }
             }
         }
+        writer
+            .write_byte_vector(self.offchain_activation.as_deref().unwrap_or_default())
+            .map_err(codec)?;
+        writer.write_u16(
+            u16::try_from(self.offchain_witnesses.len())
+                .map_err(|_| "too many off-chain records in CHAIN checkpoint".to_owned())?,
+        );
+        for witness in &self.offchain_witnesses {
+            writer.write_byte_vector(witness).map_err(codec)?;
+        }
+        for transaction in &self.offchain_transactions {
+            writer.write_byte_vector(transaction).map_err(codec)?;
+        }
         if let Some(cache) = &self.authorization_cache {
             writer.write_u8(1);
             writer.write_bytes(&cache.node_id);
             writer.write_byte_vector(&cache.request).map_err(codec)?;
             writer.write_byte_vector(&cache.witness).map_err(codec)?;
+        } else {
+            writer.write_u8(0);
+        }
+        if let Some(selection) = self.pending_action_selection {
+            writer.write_u8(1);
+            writer.write_bytes(&selection.parent_node_id);
+            writer.write_bytes(&selection.child_node_id);
+            writer.write_u8(encode_action(selection.action));
+            writer.write_u8(selection.actor.code());
+            writer.write_bytes(selection.actor_signature.as_bytes());
         } else {
             writer.write_u8(0);
         }
@@ -3088,13 +3606,7 @@ impl ChainEngine {
         if expected_role != self.local_role {
             return Err("active Lamport key belongs to the peer role".to_owned());
         }
-        let node_id = self
-            .monitor
-            .as_ref()
-            .ok_or_else(|| "chain monitor is unavailable".to_owned())?
-            .confirmed_active_node(self.graph_ref()?)
-            .map_err(|error| error.to_string())?
-            .node_id();
+        let node_id = self.active_node_id()?;
         let graph = self.graph_ref()?;
         let index = graph
             .lamport_key_index(node_id, purpose)
@@ -3122,6 +3634,9 @@ impl ChainEngine {
     }
 
     fn active_node_id(&self) -> Result<NodeId, String> {
+        if let Some(node_id) = self.offchain_head {
+            return Ok(node_id);
+        }
         self.monitor
             .as_ref()
             .ok_or_else(|| "chain monitor is unavailable".to_owned())?
@@ -3164,14 +3679,6 @@ impl ChainEngine {
         Ok(Secp256k1::new()
             .sign_schnorr_with_aux_rand(&Message::from_digest(digest), &keypair, &aux)
             .serialize())
-    }
-
-    fn sign_default(&mut self, digest: [u8; 32]) -> Result<DefaultSighashSignature, String> {
-        Ok(sign_sighash_default(
-            &Secp256k1::new(),
-            &self.secret.keypair()?,
-            digest,
-        ))
     }
 
     fn random_array(&mut self) -> [u8; 32] {
@@ -3800,7 +4307,11 @@ struct CheckpointState {
     lamport_key_count: u16,
     lamport_key_states: Vec<u8>,
     confirmations: Vec<StoredConfirmation>,
+    offchain_activation: Vec<u8>,
+    offchain_witnesses: Vec<Vec<u8>>,
+    offchain_transactions: Vec<Vec<u8>>,
     authorization: Option<AuthorizationCache>,
+    pending_action_selection: Option<PendingActionSelection>,
     erasure: Option<ErasureCache>,
     monitor_state: Option<MonitorState>,
 }
@@ -3893,6 +4404,35 @@ fn decode_checkpoint_body(bytes: &[u8], expected_counter: u64) -> Result<Checkpo
             _ => return Err("CHAIN checkpoint contains an unknown confirmation kind".to_owned()),
         });
     }
+    let offchain_activation = reader.read_byte_vector(1_000_000).map_err(codec)?;
+    if !offchain_activation.is_empty() {
+        let transaction: Transaction =
+            deserialize(&offchain_activation).map_err(|error| error.to_string())?;
+        if serialize(&transaction) != offchain_activation {
+            return Err("checkpoint off-chain activation is not canonical".to_owned());
+        }
+    }
+    let offchain_count = reader.read_u16().map_err(codec)?;
+    if offchain_count > MAX_CONFIRMATION_RECORDS {
+        return Err("CHAIN checkpoint contains too many off-chain records".to_owned());
+    }
+    let mut offchain_witnesses = Vec::with_capacity(usize::from(offchain_count));
+    for _ in 0..offchain_count {
+        let witness = reader
+            .read_byte_vector(MAX_CACHED_WITNESS_BYTES)
+            .map_err(codec)?;
+        bp52_chain_runtime::Witness::decode(&witness).map_err(|error| error.to_string())?;
+        offchain_witnesses.push(witness);
+    }
+    let mut offchain_transactions = Vec::with_capacity(usize::from(offchain_count));
+    for _ in 0..offchain_count {
+        let transaction = reader.read_byte_vector(4 * 1024 * 1024).map_err(codec)?;
+        let decoded: Transaction = deserialize(&transaction).map_err(|error| error.to_string())?;
+        if serialize(&decoded) != transaction {
+            return Err("checkpoint off-chain transaction is not canonical".to_owned());
+        }
+        offchain_transactions.push(transaction);
+    }
     let authorization = if exact_boolean(reader.read_u8().map_err(codec)?)? {
         let node_id = reader.read_array::<32>().map_err(codec)?;
         let request = reader.read_byte_vector(1_024).map_err(codec)?;
@@ -3908,6 +4448,20 @@ fn decode_checkpoint_body(bytes: &[u8], expected_counter: u64) -> Result<Checkpo
             node_id,
             request,
             witness,
+        })
+    } else {
+        None
+    };
+    let pending_action_selection = if exact_boolean(reader.read_u8().map_err(codec)?)? {
+        Some(PendingActionSelection {
+            parent_node_id: reader.read_array::<32>().map_err(codec)?,
+            child_node_id: reader.read_array::<32>().map_err(codec)?,
+            action: decode_action(reader.read_u8().map_err(codec)?)?,
+            actor: decode_role(reader.read_u8().map_err(codec)?)?,
+            actor_signature: DefaultSighashSignature::from_bytes(
+                reader.read_array::<64>().map_err(codec)?,
+            )
+            .map_err(|error| error.to_string())?,
         })
     } else {
         None
@@ -3964,7 +4518,11 @@ fn decode_checkpoint_body(bytes: &[u8], expected_counter: u64) -> Result<Checkpo
         lamport_key_count: lamport_count,
         lamport_key_states,
         confirmations,
+        offchain_activation,
+        offchain_witnesses,
+        offchain_transactions,
         authorization,
+        pending_action_selection,
         erasure,
         monitor_state,
     })
@@ -4532,6 +5090,138 @@ fn exact_u8(bytes: &[u8]) -> Result<u8, String> {
     }
 }
 
+fn decode_action(value: u8) -> Result<Action, String> {
+    match value {
+        0 => Ok(Action::Fold),
+        1 => Ok(Action::Check),
+        2 => Ok(Action::Call),
+        3 => Ok(Action::Bet),
+        4 => Ok(Action::Raise),
+        _ => Err("unknown betting action".to_owned()),
+    }
+}
+
+const fn encode_action(action: Action) -> u8 {
+    match action {
+        Action::Fold => 0,
+        Action::Check => 1,
+        Action::Call => 2,
+        Action::Bet => 3,
+        Action::Raise => 4,
+    }
+}
+
+fn encode_action_request(selection: PendingActionSelection) -> Vec<u8> {
+    let mut output = Vec::with_capacity(130);
+    output.extend_from_slice(&selection.parent_node_id);
+    output.extend_from_slice(&selection.child_node_id);
+    output.push(encode_action(selection.action));
+    output.push(selection.actor.code());
+    output.extend_from_slice(selection.actor_signature.as_bytes());
+    output
+}
+
+fn decode_action_request(bytes: &[u8]) -> Result<PendingActionSelection, String> {
+    let mut reader = Reader::new(bytes);
+    let parent_node_id = reader.read_array::<32>().map_err(codec)?;
+    let child_node_id = reader.read_array::<32>().map_err(codec)?;
+    let action = decode_action(reader.read_u8().map_err(codec)?)?;
+    let actor = decode_role(reader.read_u8().map_err(codec)?)?;
+    let actor_signature =
+        DefaultSighashSignature::from_bytes(reader.read_array::<64>().map_err(codec)?)
+            .map_err(|error| error.to_string())?;
+    reader.finish().map_err(codec)?;
+    Ok(PendingActionSelection {
+        parent_node_id,
+        child_node_id,
+        action,
+        actor,
+        actor_signature,
+    })
+}
+
+fn encode_action_response_from_witness(
+    selection: PendingActionSelection,
+    witness: &bp52_chain_runtime::Witness,
+) -> Result<Vec<u8>, String> {
+    let bp52_chain_runtime::Witness::Action {
+        node_id,
+        child_node_id,
+        action,
+        alice_signature,
+        bob_signature,
+        ..
+    } = witness
+    else {
+        return Err("cached authorization is not a betting witness".to_owned());
+    };
+    if *node_id != selection.parent_node_id
+        || *child_node_id != selection.child_node_id
+        || *action != selection.action
+    {
+        return Err("cached betting witness differs from its selection".to_owned());
+    }
+    Ok(encode_action_response(
+        selection,
+        *alice_signature,
+        *bob_signature,
+    ))
+}
+
+fn encode_action_response(
+    selection: PendingActionSelection,
+    alice_signature: DefaultSighashSignature,
+    bob_signature: DefaultSighashSignature,
+) -> Vec<u8> {
+    let mut output = Vec::with_capacity(194);
+    output.extend_from_slice(&selection.parent_node_id);
+    output.extend_from_slice(&selection.child_node_id);
+    output.push(encode_action(selection.action));
+    output.push(selection.actor.code());
+    output.extend_from_slice(alice_signature.as_bytes());
+    output.extend_from_slice(bob_signature.as_bytes());
+    output
+}
+
+fn decode_action_response(
+    bytes: &[u8],
+) -> Result<
+    (
+        PendingActionSelection,
+        DefaultSighashSignature,
+        DefaultSighashSignature,
+    ),
+    String,
+> {
+    let mut reader = Reader::new(bytes);
+    let parent_node_id = reader.read_array::<32>().map_err(codec)?;
+    let child_node_id = reader.read_array::<32>().map_err(codec)?;
+    let action = decode_action(reader.read_u8().map_err(codec)?)?;
+    let actor = decode_role(reader.read_u8().map_err(codec)?)?;
+    let alice_signature =
+        DefaultSighashSignature::from_bytes(reader.read_array::<64>().map_err(codec)?)
+            .map_err(|error| error.to_string())?;
+    let bob_signature =
+        DefaultSighashSignature::from_bytes(reader.read_array::<64>().map_err(codec)?)
+            .map_err(|error| error.to_string())?;
+    reader.finish().map_err(codec)?;
+    let actor_signature = match actor {
+        Role::Alice => alice_signature,
+        Role::Bob => bob_signature,
+    };
+    Ok((
+        PendingActionSelection {
+            parent_node_id,
+            child_node_id,
+            action,
+            actor,
+            actor_signature,
+        },
+        alice_signature,
+        bob_signature,
+    ))
+}
+
 fn authorization_request(kind: u8, payload: &[u8]) -> Vec<u8> {
     let mut request = Vec::with_capacity(payload.len() + 1);
     request.push(kind);
@@ -4772,8 +5462,22 @@ mod abi {
         verify_activation_artifact
     );
     op!(bp52_chain_confirm_activation, confirm_activation);
+    op!(bp52_chain_open_offchain_root, open_offchain_root);
+    op!(
+        bp52_chain_advance_offchain_witness,
+        advance_offchain_witness
+    );
     op!(bp52_chain_observe_tip, observe_tip);
     op!(bp52_chain_build_action, build_action);
+    op!(bp52_chain_begin_selected_action, begin_selected_action);
+    op!(
+        bp52_chain_accept_selected_action_request,
+        accept_selected_action_request
+    );
+    op!(
+        bp52_chain_accept_selected_action_response,
+        accept_selected_action_response
+    );
     op!(bp52_chain_build_advance, build_advance);
     op!(bp52_chain_build_reveal, build_reveal, no_input);
     op!(bp52_chain_build_alice_showdown, build_alice_showdown);
@@ -4788,6 +5492,16 @@ mod abi {
     op!(
         bp52_chain_confirmed_state_receipt,
         confirmed_state_receipt,
+        no_input
+    );
+    op!(
+        bp52_chain_offchain_state_receipt,
+        offchain_state_receipt,
+        no_input
+    );
+    op!(
+        bp52_chain_offchain_dispute_package,
+        offchain_dispute_package,
         no_input
     );
     op!(bp52_chain_public_context, public_context, no_input);
@@ -5404,7 +6118,10 @@ mod tests {
                 writer.write_u32(u32::from(index) + 1);
                 writer.write_byte_vector(&transaction).map_err(codec)?;
             }
-            // Cached authorization, erasure, and monitor.
+            writer.write_byte_vector(&[]).map_err(codec)?; // Off-chain activation.
+            writer.write_u16(0); // Off-chain witnesses.
+            // Cached authorization, pending selection, erasure, and monitor.
+            writer.write_u8(0);
             writer.write_u8(0);
             writer.write_u8(0);
             writer.write_u8(0);

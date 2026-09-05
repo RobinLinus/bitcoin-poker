@@ -358,6 +358,21 @@ pub fn build_reveal_witness(
     reject_mainnet(graph.network())?;
     let node_id = active.node_id();
     active.validate(graph, node_id)?;
+    build_selected_reveal_witness(graph, node_id, preimages, signer)
+}
+
+/// Build the unique reveal edge from an authenticated off-chain parent.
+///
+/// Unlike [`build_reveal_witness`], this takes the exact durable ratchet head
+/// instead of a confirmation capability. The edge itself is unique and the
+/// counterparty signature was safely fixed during graph setup.
+pub fn build_selected_reveal_witness(
+    graph: &dyn ChainBackend,
+    node_id: NodeId,
+    preimages: &[Vec<u8>],
+    signer: &dyn BitcoinSigner,
+) -> Result<Witness, RuntimeError> {
+    reject_mainnet(graph.network())?;
     let pattern = unique_reveal_pattern(graph, node_id)?;
     let edge = validate_exact_edge(graph, node_id, reveal_edge_kind(pattern))?;
     if !matches!(
@@ -502,6 +517,32 @@ pub fn build_alice_showdown_witness(
             Err(error)
         }
     }
+}
+
+/// Build Alice's unique showdown transition from a durable off-chain head.
+/// The Lamport key remains the caller's persistent one-time-use guard.
+#[allow(clippy::too_many_arguments)]
+pub fn build_selected_alice_showdown_witness(
+    graph: &dyn ChainBackend,
+    parent_node_id: NodeId,
+    public_preimages: &PublicPreimageStore,
+    alice_secret: &dyn SecretPreimageSource,
+    subset_id: u8,
+    score: u32,
+    score_ots: &mut LamportSecretKey,
+    alice_signer: &dyn BitcoinSigner,
+) -> Result<Witness, RuntimeError> {
+    let mut guard = ChainMonitor::for_offchain_authorization(graph, parent_node_id)?;
+    build_alice_showdown_witness(
+        graph,
+        &mut guard,
+        public_preimages,
+        alice_secret,
+        subset_id,
+        score,
+        score_ots,
+        alice_signer,
+    )
 }
 
 /// Build Bob's score-certified terminal witness and request his live signature.
@@ -678,6 +719,35 @@ pub fn build_bob_payout_witness(
     }
 }
 
+/// Build Bob's unique payout transition from a durable off-chain head.
+/// The selected outcome and one-time score key are revalidated identically to
+/// the confirmed-state builder, without exposing a CSV capability.
+#[allow(clippy::too_many_arguments)]
+pub fn build_selected_bob_payout_witness(
+    graph: &dyn ChainBackend,
+    parent_node_id: NodeId,
+    public_preimages: &PublicPreimageStore,
+    bob_secret: &dyn SecretPreimageSource,
+    subset_id: u8,
+    score_b: u32,
+    outcome_branch: ShowdownOutcome,
+    bob_score_ots: &mut LamportSecretKey,
+    bob_signer: &dyn BitcoinSigner,
+) -> Result<Witness, RuntimeError> {
+    let mut guard = ChainMonitor::for_offchain_authorization(graph, parent_node_id)?;
+    build_bob_payout_witness(
+        graph,
+        &mut guard,
+        public_preimages,
+        bob_secret,
+        subset_id,
+        score_b,
+        outcome_branch,
+        bob_score_ots,
+        bob_signer,
+    )
+}
+
 fn validate_bob_outcome_before_signing(
     graph: &dyn ChainBackend,
     _alice_showdown_node_id: NodeId,
@@ -799,19 +869,20 @@ fn validate_action_witness(
     alice_signature: DefaultSighashSignature,
     bob_signature: DefaultSighashSignature,
 ) -> Result<(), RuntimeError> {
-    let AuthorizationPolicy::BettingAction { actor } = edge.edge.authorization else {
+    let AuthorizationPolicy::BettingAction { actor: _ } = edge.edge.authorization else {
         return Err(RuntimeError::WrongAuthorization);
     };
     if edge.parent.node_kind != NodeKind::Betting || edge.edge.kind != EdgeKind::Action(action) {
         return Err(RuntimeError::WrongAuthorization);
     }
     let digest = edge_sighash(graph, edge)?;
-    let (actor_signature, opponent_signature) = match actor {
-        Role::Alice => (alice_signature, bob_signature),
-        Role::Bob => (bob_signature, alice_signature),
-    };
-    verify_fixed_preauthorization(graph, edge, actor.other(), digest, opponent_signature)?;
-    verify_signature(graph, actor, digest, actor_signature)
+    // Betting siblings are deliberately absent from the setup-time
+    // preauthorization bundle. Both participants authorize only the one edge
+    // selected by the durable off-chain ratchet, so witness validation must
+    // verify the two exact BIP340 signatures without requiring a nonexistent
+    // fixed preauthorization entry.
+    verify_signature(graph, Role::Alice, digest, alice_signature)?;
+    verify_signature(graph, Role::Bob, digest, bob_signature)
 }
 
 fn validate_advance_witness(

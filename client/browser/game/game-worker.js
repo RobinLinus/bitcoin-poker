@@ -68,6 +68,11 @@ async function handleMessage(event) {
         respond(id, { projection: result.value, metrics: result.metrics });
         break;
       }
+      case "apply-offchain-state-receipt": {
+        const result = session.applyOffchainStateReceipt(event.data.receipt);
+        respond(id, { projection: result.value, metrics: result.metrics });
+        break;
+      }
       case "project":
         respond(id, { projection: session.project() });
         break;

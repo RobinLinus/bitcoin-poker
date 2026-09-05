@@ -108,6 +108,9 @@ pub enum SessionEvent {
     SpendConfirmed(ChainSpend),
     /// Compact local CHAIN receipt for a verified confirmed state transition.
     StateConfirmed(Vec<u8>),
+    /// Compact local CHAIN receipt for a fully authorized, unbroadcast state
+    /// transition in the cooperative ratchet.
+    StateAdvancedOffchain(Vec<u8>),
 }
 
 impl SessionEvent {
@@ -166,6 +169,7 @@ impl SessionEvent {
                 encode_spend(&mut writer, fact)?;
             }
             Self::StateConfirmed(bytes) => encode_artifact(11, &mut writer, bytes)?,
+            Self::StateAdvancedOffchain(bytes) => encode_artifact(12, &mut writer, bytes)?,
         }
         Ok(writer.into_bytes())
     }
@@ -205,6 +209,7 @@ impl SessionEvent {
             9 => Self::RuntimeAuthorized(read_artifact(&mut reader)?),
             10 => Self::SpendConfirmed(decode_spend(&mut reader)?),
             11 => Self::StateConfirmed(read_artifact(&mut reader)?),
+            12 => Self::StateAdvancedOffchain(read_artifact(&mut reader)?),
             _ => return Err(CodecError::NonCanonical),
         };
         reader.finish()?;

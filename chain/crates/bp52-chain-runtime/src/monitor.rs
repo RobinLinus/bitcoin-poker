@@ -248,6 +248,39 @@ impl ChainMonitor {
         }
     }
 
+    /// Ephemeral authorization guard for a parent already authenticated by an
+    /// off-chain ratchet. This is never exposed as a chain fact and cannot
+    /// produce timeout capabilities; selected showdown builders use it only
+    /// for their existing one-witness cache discipline.
+    pub(crate) fn for_offchain_authorization(
+        graph: &dyn ChainBackend,
+        node_id: NodeId,
+    ) -> Result<Self, RuntimeError> {
+        reject_mainnet(graph.network())?;
+        let node = graph
+            .node(node_id)
+            .ok_or(RuntimeError::NodeNotFound { node_id })?;
+        node.validate()?;
+        if node.node_kind.is_terminal() {
+            return Err(RuntimeError::UnexpectedConfirmation);
+        }
+        Ok(Self {
+            chain_game_id: graph.chain_game_id(),
+            graph_root: graph.graph_root(),
+            funding_confirmation_depth: NonZeroU16::MIN,
+            state: MonitorState::Active {
+                node_id,
+                confirmed_height: 0,
+                creating_txid: node
+                    .transaction
+                    .as_ref()
+                    .map(|transaction| transaction.txid),
+            },
+            highest_tip: None,
+            issued_authorization_witness: None,
+        })
+    }
+
     pub(crate) fn issued_authorization_witness(&self, node_id: NodeId) -> Option<&Witness> {
         self.issued_authorization_witness
             .as_ref()
@@ -721,7 +754,7 @@ pub fn erase_lamport_key(
     Ok(())
 }
 
-fn ingest_public_witness(
+pub(crate) fn ingest_public_witness(
     store: &mut PublicPreimageStore,
     witness: &Witness,
 ) -> Result<(), RuntimeError> {

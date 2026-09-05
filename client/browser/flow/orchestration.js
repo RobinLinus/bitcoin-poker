@@ -426,7 +426,7 @@ export function deriveChainRelayTransition(result, message, transportRole) {
     typeof result.deferred !== "boolean" ||
     typeof result.readyForActivation !== "boolean" ||
     result.accepted !== !result.deferred ||
-    !Number.isSafeInteger(result.package) || result.package < 1 || result.package > 7 ||
+    !Number.isSafeInteger(result.package) || result.package < 1 || result.package > 10 ||
     (result.role !== 0 && result.role !== 1)
   ) {
     throw new Error("CHAIN Worker returned an invalid relay acknowledgement");

@@ -5,6 +5,7 @@ const CONTEXT_MAGIC = textEncoder.encode("BP52CT01");
 const CARD_MAGIC = textEncoder.encode("BP52CP01");
 const EXCHANGE_MAGIC = textEncoder.encode("BP52CX01");
 const RUNTIME_STATUS_MAGIC = textEncoder.encode("BP52RS01");
+const DISPUTE_PACKAGE_MAGIC = textEncoder.encode("BP52DP01");
 const SESSION_EVENT_RESULT_MAGIC = textEncoder.encode("BP52SE02");
 const PREAUTHORIZATION_PLAN_MAGIC = textEncoder.encode("BP52PP01");
 const PREAUTHORIZATION_GENERATION_PLAN_MAGIC = textEncoder.encode("BP52PG01");
@@ -27,6 +28,9 @@ export const ChainExchangePackage = Object.freeze({
   GRAPH_ROOT_OPENING: 5,
   PREAUTHORIZATION_COMMITMENT: 6,
   PREAUTHORIZATION_OPENING: 7,
+  ACTION_SIGNATURE_REQUEST: 8,
+  ACTION_SIGNATURE_RESPONSE: 9,
+  OFFCHAIN_TRANSITION: 10,
 });
 
 /** Secret Worker phase codes. */
@@ -260,6 +264,11 @@ class Reader {
     return this.take(1)[0];
   }
 
+  u16() {
+    const bytes = this.take(2);
+    return new DataView(bytes.buffer, bytes.byteOffset, 2).getUint16(0, true);
+  }
+
   u32() {
     const bytes = this.take(4);
     return new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0, true);
@@ -279,6 +288,24 @@ class Reader {
   finish() {
     if (this.offset !== this.bytes.byteLength) throw new Error(`${this.label} has trailing bytes`);
   }
+}
+
+/** Decode a self-contained, ordered path that can enforce the latest state on Bitcoin. */
+export function decodeOffchainDisputePackage(value) {
+  const reader = new Reader(value, "off-chain dispute package");
+  if (!sameBytes(reader.take(8), DISPUTE_PACKAGE_MAGIC)) {
+    throw new Error("off-chain dispute package has the wrong magic");
+  }
+  const activation = reader.vector(MAX_INPUT_BYTES);
+  const count = reader.u16();
+  if (count > 1_024) throw new Error("off-chain dispute path exceeds its fixed bound");
+  const transactions = [];
+  for (let index = 0; index < count; index += 1) {
+    transactions.push(reader.vector(MAX_INPUT_BYTES));
+  }
+  const headNodeId = reader.take(32);
+  reader.finish();
+  return { activation, transactions, headNodeId };
 }
 
 /** Decode the public context exported by the secret Wasm runtime. */
@@ -317,6 +344,12 @@ function validateExchangePackage(packageId, artifact) {
     packageId <= ChainExchangePackage.PREAUTHORIZATION_OPENING
   ) {
     if (artifact.byteLength === 0) throw new Error("CHAIN setup artifact must not be empty");
+  } else if (packageId === ChainExchangePackage.ACTION_SIGNATURE_REQUEST) {
+    if (artifact.byteLength !== 130) throw new Error("action-signature request must be 130 bytes");
+  } else if (packageId === ChainExchangePackage.ACTION_SIGNATURE_RESPONSE) {
+    if (artifact.byteLength !== 194) throw new Error("action-signature response must be 194 bytes");
+  } else if (packageId === ChainExchangePackage.OFFCHAIN_TRANSITION) {
+    if (artifact.byteLength === 0) throw new Error("off-chain transition witness must not be empty");
   } else {
     throw new Error("unknown CHAIN exchange package");
   }
@@ -866,11 +899,58 @@ export class ChainRuntime {
     return result.byteLength === 0 ? null : decodeCardProjection(result);
   }
 
+  openOffchainRoot(transaction) {
+    return decodeCardProjection(this.#invoke(
+      "bp52_chain_open_offchain_root",
+      asBytes(transaction, "off-chain activation transaction"),
+    ));
+  }
+
+  offchainStateReceipt() {
+    return this.#invoke("bp52_chain_offchain_state_receipt");
+  }
+
+  offchainDisputePackage() {
+    return decodeOffchainDisputePackage(this.#invoke("bp52_chain_offchain_dispute_package"));
+  }
+
+  commitOffchainWitness(witness) {
+    return this.#invoke("bp52_chain_advance_offchain_witness", asBytes(witness, "off-chain witness"));
+  }
+
+  offchainTransition(witness) {
+    return this.#relayEnvelope(
+      ChainExchangePackage.OFFCHAIN_TRANSITION,
+      asBytes(witness, "off-chain transition witness"),
+    );
+  }
+
   observeTip(height) {
     this.#invoke("bp52_chain_observe_tip", u32(height, "tip height"));
   }
 
   buildAction(action) { return this.#invoke("bp52_chain_build_action", Uint8Array.of(action)); }
+  beginSelectedAction({ childNodeId, action }) {
+    return this.#relayEnvelope(
+      ChainExchangePackage.ACTION_SIGNATURE_REQUEST,
+      this.#invoke(
+        "bp52_chain_begin_selected_action",
+        concatBytes(exactBytes(childNodeId, 32, "selected action childNodeId"), u8(action, "selected action")),
+      ),
+    );
+  }
+  acceptSelectedActionRequest(artifact) {
+    return this.#invoke("bp52_chain_accept_selected_action_request", exactBytes(artifact, 130, "action-signature request"));
+  }
+  selectedActionResponse(artifact) {
+    return this.#relayEnvelope(
+      ChainExchangePackage.ACTION_SIGNATURE_RESPONSE,
+      exactBytes(artifact, 194, "action-signature response"),
+    );
+  }
+  acceptSelectedActionResponse(artifact) {
+    return this.#invoke("bp52_chain_accept_selected_action_response", exactBytes(artifact, 194, "action-signature response"));
+  }
   buildEdge({ childNodeId }) {
     return this.#invoke(
       "bp52_chain_build_advance",

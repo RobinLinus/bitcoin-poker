@@ -8,7 +8,7 @@ import {
 import { GamePhase } from "/browser/game/game-runtime.js";
 import {
   createBrowserChainGameFlow,
-} from "/browser/flow/chain-game-client.js?v=11";
+} from "/browser/flow/chain-game-client.js?v=12";
 import {
   gameChainRefreshReady,
   localRoleMayAuthorizeEdge,
@@ -196,6 +196,7 @@ let gameplayAutomationScheduled = false;
 let gameplayPublishNextAttemptAt = 0;
 let gameplayEdgeNextAttemptAt = 0;
 let gameplayPendingTxid = null;
+let recoverySubmittedStep = null;
 let automaticallyAuthorizedGameEdges = new Set();
 let lastSetupDiagnostic = null;
 let lastGameTipKey = null;
@@ -2096,6 +2097,7 @@ function scheduleAutomaticSetup(activeSession = session) {
 function scheduleAutomaticGameplay(activeSession = session) {
   if (gameplayAutomationScheduled || !sessionIsActive(activeSession)) return;
   const pending = chainGameView?.pendingBroadcast;
+  const recovery = chainGameView?.recovery;
   let pendingTxid = null;
   let publishAction = null;
   let automaticEdge = null;
@@ -2141,13 +2143,19 @@ function scheduleAutomaticGameplay(activeSession = session) {
     showError(elements["game-error"], violation);
     return;
   }
-  if (!publishAction && !automaticEdge) return;
+  const publishRecovery = Boolean(
+    recovery?.transaction && recoverySubmittedStep !== recovery.step &&
+    !gameTransactionBroadcasting
+  );
+  if (!publishAction && !automaticEdge && !publishRecovery) return;
 
   gameplayAutomationScheduled = true;
   setTimeout(async () => {
     try {
       if (!sessionIsActive(activeSession)) return;
-      if (publishAction) {
+      if (publishRecovery) {
+        await broadcastRecoveryTransaction();
+      } else if (publishAction) {
         await broadcastPendingGameTransaction(1);
       } else {
         const childNodeId = bytesToHex(automaticEdge.childNodeId);
@@ -2199,7 +2207,7 @@ async function refreshActiveGameChain(activeSession, adapter, verifiedTip) {
   let projection = gameFlow.currentProjection();
   if (
     projection.status.phase < GamePhase.AWAITING_ACTIVATION ||
-    projection.status.phase > GamePhase.ACTIVE ||
+    projection.status.phase > GamePhase.SETTLED ||
     !projection.intents.some((intent) => intent.name === "observe-state")
   ) return;
   const tip = verifiedTip ?? await adapter.tip();
@@ -2334,6 +2342,7 @@ function stopGameFlow() {
   gameplayPublishNextAttemptAt = 0;
   gameplayEdgeNextAttemptAt = 0;
   gameplayPendingTxid = null;
+  recoverySubmittedStep = null;
   automaticallyAuthorizedGameEdges.clear();
   elements["action-bar"].classList.add("hidden");
   submittedGameTransactions.clear();
@@ -2386,7 +2395,9 @@ function localMayAuthorizeEdge(edge) {
 function setActionButton(element, edge, label) {
   element.classList.toggle("hidden", !edge);
   element.disabled = !edge || !localMayAuthorizeEdge(edge) ||
-    Boolean(chainGameView?.pendingBroadcast) || gameActionAuthorizing;
+    Boolean(chainGameView?.pendingBroadcast) ||
+    Boolean(chainGameView?.recovery && !chainGameView.recovery.complete) ||
+    gameActionAuthorizing;
   element.dataset.childNodeId = edge ? bytesToHex(edge.childNodeId) : "";
   if (edge) element.textContent = label;
 }
@@ -2488,19 +2499,34 @@ function renderChainGameFlow(activeSession) {
   const matureTimeout = timeout && localMayAuthorizeEdge(timeout) &&
     Number.isSafeInteger(view?.timeoutMaturesAt) && Number.isSafeInteger(view?.tipHeight) &&
     view.tipHeight >= view.timeoutMaturesAt ? timeout : null;
-  setActionButton(elements["action-timeout"], matureTimeout, "Claim timeout");
+  const recoveryAvailable = !view?.recovery && !pending && (
+    view?.phase === GamePhase.SETTLED ||
+    view?.phase === GamePhase.ACTIVE && !edges.some(
+      (edge) => edge.kind.name === "action" && localMayAuthorizeEdge(edge)
+    )
+  );
+  if (matureTimeout) {
+    setActionButton(elements["action-timeout"], matureTimeout, "Claim timeout");
+    elements["action-timeout"].dataset.mode = "edge";
+  } else {
+    elements["action-timeout"].classList.toggle("hidden", !recoveryAvailable);
+    elements["action-timeout"].disabled = !recoveryAvailable || gameActionAuthorizing;
+    elements["action-timeout"].dataset.childNodeId = "";
+    elements["action-timeout"].dataset.mode = "recovery";
+    elements["action-timeout"].textContent = "Go on-chain";
+  }
 
   const strategicActionable = edges.some(
     (edge) => edge.kind.name === "action" && localMayAuthorizeEdge(edge)
   );
-  const playerChoice = strategicActionable || Boolean(matureTimeout);
+  const playerChoice = strategicActionable || Boolean(matureTimeout) || recoveryAvailable;
   const automaticEdge = selectAutomaticGameEdge(edges, {
     localRole: gameFlowView?.canonicalRole,
     cards,
   });
   elements["action-bar"].classList.toggle(
     "hidden",
-    view?.phase !== GamePhase.ACTIVE || !playerChoice,
+    ![GamePhase.ACTIVE, GamePhase.SETTLED].includes(view?.phase) || !playerChoice,
   );
   if (view?.phase === GamePhase.ACTIVE) {
     const headline = pending?.purpose === 1
@@ -2511,6 +2537,8 @@ function renderChainGameFlow(activeSession) {
         ? "No action is needed."
         : playerChoice ? "Choose your move." : "The table will update automatically.";
     setTableStatus(headline, detail, Boolean(pending?.purpose === 1 || automaticEdge));
+  } else if (view?.settlementOffchain) {
+    setTableStatus("Hand complete", "The payout is agreed off-chain.");
   } else if (view?.settlement) {
     setTableStatus("Payout confirmed", "The game is complete.");
   }
@@ -3646,7 +3674,58 @@ async function authorizeGameEdgeById(childNodeId, { automatic = false } = {}) {
 
 async function authorizeGameEdge(button) {
   if (button.disabled) return false;
+  if (button.dataset.mode === "recovery") {
+    const activeSession = session;
+    if (gameActionAuthorizing || !sessionIsActive(activeSession) || !chainGameFlow) return false;
+    gameActionAuthorizing = true;
+    clearError(elements["game-error"]);
+    renderGameFlow(activeSession);
+    try {
+      chainGameView = await chainGameFlow.recoverOnchain();
+      scheduleAutomaticGameplay(activeSession);
+      return true;
+    } catch (error) {
+      if (session === activeSession) {
+        chainGameError = error instanceof Error ? error.message : String(error);
+        showError(elements["game-error"], error);
+      }
+      return false;
+    } finally {
+      gameActionAuthorizing = false;
+      if (session === activeSession) renderGameFlow(activeSession);
+    }
+  }
   return authorizeGameEdgeById(button.dataset.childNodeId);
+}
+
+async function broadcastRecoveryTransaction() {
+  const activeSession = session;
+  const recovery = chainGameView?.recovery;
+  if (
+    gameTransactionBroadcasting || !sessionIsActive(activeSession) ||
+    !recovery?.transaction || recoverySubmittedStep === recovery.step || originWasRefunded()
+  ) return;
+  gameTransactionBroadcasting = true;
+  clearError(elements["game-error"]);
+  renderGameFlow(activeSession);
+  try {
+    const adapter = await loadChainAdapter();
+    const submittedTxid = await adapter.publish(recovery.transaction, {
+      expectedProfileId: hexToBytes(CHAIN_NETWORK_ID_HEX)
+    });
+    if (!sessionIsActive(activeSession)) return;
+    submittedGameTransactions.add(bytesToHex(submittedTxid));
+    recoverySubmittedStep = recovery.step;
+    originChainNextCheckAt = 0;
+    if (originPackageContext) {
+      await pollOriginChainStatus(activeSession, originPackageContext, originEpoch, true);
+    }
+  } catch (error) {
+    if (session === activeSession) showError(elements["game-error"], error);
+  } finally {
+    gameTransactionBroadcasting = false;
+    if (session === activeSession) renderGameFlow(activeSession);
+  }
 }
 
 async function broadcastPendingGameTransaction(expectedPurpose = null) {

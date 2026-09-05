@@ -313,6 +313,10 @@ export class BrowserGameFlow {
     return this.#enqueue(() => this.#applyRuntimeReceipt("apply-confirmed-state-receipt", receipt));
   }
 
+  applyOffchainStateReceipt(receipt) {
+    return this.#enqueue(() => this.#applyRuntimeReceipt("apply-offchain-state-receipt", receipt));
+  }
+
   applyLocalWalletEvent(event) {
     return this.#enqueue(() => this.#applyLocalEvent(GameEventSource.LOCAL_WALLET, event));
   }

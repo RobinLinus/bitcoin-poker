@@ -94,6 +94,10 @@ impl SessionEngine {
         self.apply_local_receipt(SessionEvent::StateConfirmed(receipt.to_vec()))
     }
 
+    fn apply_offchain_state_receipt(&mut self, receipt: &[u8]) -> Result<Vec<u8>, String> {
+        self.apply_local_receipt(SessionEvent::StateAdvancedOffchain(receipt.to_vec()))
+    }
+
     fn apply_local_receipt(&mut self, event: SessionEvent) -> Result<Vec<u8>, String> {
         self.apply_decoded(EventSource::LocalRuntime, &event)
     }
@@ -478,6 +482,10 @@ fn encode_intent(intent: &SessionIntent) -> Result<Vec<u8>, String> {
             writer.write_bytes(node_id);
             write_display_txid(&mut writer, *txid);
         }
+        SessionIntent::SettlementOffchain { node_id } => {
+            writer.write_u8(12);
+            writer.write_bytes(node_id);
+        }
         SessionIntent::Halted { reason } => {
             writer.write_u8(11);
             write_required_bounded_text(&mut writer, reason)?;
@@ -753,6 +761,22 @@ mod wasm_exports {
                 return state.fail(1, "game-session reducer is not initialized");
             };
             match engine.apply_confirmed_state_receipt(&receipt) {
+                Ok(projection) => state.set_output(projection),
+                Err(error) => state.fail(4, error),
+            }
+        })
+    }
+
+    /// Strictly decode and apply one locally verified cooperative state.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bp52_game_apply_offchain_state_receipt() -> i32 {
+        with_module(|state| {
+            state.clear_error();
+            let receipt = std::mem::take(&mut state.input);
+            let Some(engine) = state.engine.as_mut() else {
+                return state.fail(1, "game-session reducer is not initialized");
+            };
+            match engine.apply_offchain_state_receipt(&receipt) {
                 Ok(projection) => state.set_output(projection),
                 Err(error) => state.fail(4, error),
             }

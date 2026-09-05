@@ -28,7 +28,7 @@ function appFragment(start, end) {
   return app.slice(startIndex, endIndex);
 }
 
-const tableStatus = fragment('<div class="table-message">', '<section id="funding-card"');
+const tableStatus = fragment('<div id="table-message" class="table-message">', '<section id="funding-card"');
 assert.match(tableStatus, /id="table-phase"/u);
 assert.match(tableStatus, /id="table-detail"/u);
 assert.match(tableStatus, /id="broadcast-refund"[^>]*hidden/u);

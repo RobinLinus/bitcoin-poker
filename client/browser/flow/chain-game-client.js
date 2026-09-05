@@ -5,7 +5,7 @@ import {
 } from "../game/game-runtime.js";
 import {
   BrowserChainWorker,
-} from "../chain/chain-client.js?v=11";
+} from "../chain/chain-client.js?v=12";
 import {
   ChainExchangePackage,
   ChainPhase,
@@ -178,6 +178,8 @@ export class BrowserChainGameFlow {
     this.activationConsent = true;
     this.activationSignatureSent = false;
     this.activationTransaction = undefined;
+    this.dispute = undefined;
+    this.disputeConfirmed = 0;
     this.cards = null;
     this.lastTipHeight = undefined;
     this.recoveredPhase = ChainPhase.EMPTY;
@@ -279,7 +281,28 @@ export class BrowserChainGameFlow {
         cards: this.cards,
         lastTipHeight: this.lastTipHeight,
       });
+      if (plan.edge.kind.name === "action") {
+        const result = await this.worker.beginSelectedAction({
+          childNodeId: ownedBytes(plan.edge.childNodeId, "selected child node id", 32),
+          action: plan.edge.kind.action,
+        });
+        await this.#sendChainExchange(result.exchange);
+        this.stage = "gameplay-negotiating";
+        this.detail = "Waiting for the other player to approve this move.";
+        this.#emit();
+        return this.view();
+      }
       const result = await this.worker[plan.workerMethod](...plan.workerArguments);
+      if (result.stateReceipt) {
+        await this.context.game.applyOffchainStateReceipt(result.stateReceipt);
+        this.projection = this.context.game.currentProjection();
+        this.cards = (await this.worker.projectCards()).cards;
+        await this.#sendChainExchange(result.exchange);
+        this.stage = this.projection.status.phase === GamePhase.SETTLED ? "settled" : "active";
+        this.detail = this.stage === "settled" ? "Hand complete." : "Move committed off-chain.";
+        this.#emit();
+        return this.view();
+      }
       await this.context.game.applyRuntimeAuthorizationReceipt(result.runtimeReceipt);
       this.projection = this.context.game.currentProjection();
       this.stage = "gameplay-authorized";
@@ -305,11 +328,24 @@ export class BrowserChainGameFlow {
   confirmSpend(event) {
     return this.#enqueue(async () => {
       if (!this.worker) throw new Error("secret CHAIN Worker is unavailable");
-      const plan = planConfirmedSpend(this.projection, event);
+      const recovery = this.dispute && this.disputeConfirmed < 1 + this.dispute.transactions.length;
+      const plan = recovery ? null : planConfirmedSpend(this.projection, event);
       await this.context.game.applyChainEvent(event);
       this.projection = this.context.game.currentProjection();
       let result;
-      if (plan.activation) {
+      if (recovery && this.disputeConfirmed === 0) {
+        result = await this.worker.confirmActivation({
+          confirmedHeight: event.confirmedIn.height,
+          tipHeight: event.observedTip.height,
+          transaction: event.spendingTransaction,
+        });
+      } else if (recovery) {
+        result = await this.worker.confirmChild({
+          confirmedHeight: event.confirmedIn.height,
+          tipHeight: event.observedTip.height,
+          transaction: event.spendingTransaction,
+        });
+      } else if (plan.activation) {
         result = await this.worker.confirmActivation(plan.workerInput);
       } else {
         result = await this.worker.confirmChild(plan.workerInput);
@@ -317,9 +353,24 @@ export class BrowserChainGameFlow {
       this.cards = result.cards;
       await this.context.game.applyConfirmedStateReceipt(result.stateReceipt);
       this.projection = this.context.game.currentProjection();
+      if (recovery) this.disputeConfirmed += 1;
       this.lastTipHeight = event.observedTip.height;
       await this.#driveSetup();
       await this.#refreshWorkerStatus();
+      this.#emit();
+      return this.view();
+    });
+  }
+
+  recoverOnchain() {
+    return this.#enqueue(async () => {
+      if (!this.worker) throw new Error("secret CHAIN Worker is unavailable");
+      if (!this.dispute) {
+        this.dispute = await this.worker.disputePackage();
+        this.disputeConfirmed = 0;
+      }
+      this.stage = "recovering-onchain";
+      this.detail = "Publishing the latest agreed state for recovery.";
       this.#emit();
       return this.view();
     });
@@ -341,6 +392,13 @@ export class BrowserChainGameFlow {
     const settlement = this.projection?.intents.find(
       (value) => value.name === "settlement-confirmed"
     );
+    const settlementOffchain = this.projection?.intents.find(
+      (value) => value.name === "settlement-offchain"
+    );
+    const disputeTransactions = this.dispute
+      ? [this.dispute.activation, ...this.dispute.transactions]
+      : [];
+    const recoveryTransaction = disputeTransactions[this.disputeConfirmed];
     return {
       stage: this.stage,
       detail: this.detail,
@@ -357,6 +415,13 @@ export class BrowserChainGameFlow {
       readyForActivation: this.readyForActivation,
       pendingBroadcast,
       settlement,
+      settlementOffchain,
+      recovery: this.dispute ? {
+        step: this.disputeConfirmed,
+        total: disputeTransactions.length,
+        transaction: recoveryTransaction,
+        complete: this.disputeConfirmed >= disputeTransactions.length,
+      } : null,
       legalEdges: runtime?.edges ?? [],
       timeoutMaturesAt: runtime?.timeoutMaturesAt,
       tipHeight: this.lastTipHeight,
@@ -548,6 +613,13 @@ export class BrowserChainGameFlow {
     if (!this.worker || !this.projection) return;
     for (;;) {
       const intent = this.projection.intents[0];
+      if (
+        this.projection.status.phase === GamePhase.AWAITING_ACTIVATION &&
+        this.activationTransaction
+      ) {
+        await this.#acceptAssembledActivation(this.activationTransaction);
+        return;
+      }
       if (
         intent?.name === "sign-descriptor" &&
         !this.publishedSetupKinds.has(ChainSetupKind.DESCRIPTOR_SIGNATURE)
@@ -781,6 +853,22 @@ export class BrowserChainGameFlow {
     } else {
       this.deferredChainFrames.delete(message.messageId);
       this.appliedChainFrames.add(message.messageId);
+      if (result.stateReceipt) {
+        await this.context.game.applyOffchainStateReceipt(result.stateReceipt);
+        this.projection = this.context.game.currentProjection();
+        this.cards = (await this.worker.projectCards()).cards;
+        this.stage = this.projection.status.phase === GamePhase.SETTLED ? "settled" : "active";
+        this.detail = this.stage === "settled" ? "Hand complete." : "Move committed off-chain.";
+      }
+      if (result.runtimeReceipt) {
+        await this.context.game.applyRuntimeAuthorizationReceipt(result.runtimeReceipt);
+        this.projection = this.context.game.currentProjection();
+        this.stage = "gameplay-authorized";
+        this.detail = "Move approved. Sending it to the table.";
+      }
+      if (result.responseExchange) {
+        await this.#sendChainExchange(result.responseExchange);
+      }
       await this.#acceptAssembledActivation(transition.activationTransaction);
       if (transition.retryDeferred && this.deferredChainFrames.size > 0) {
         await this.#retryDeferredChainFrames();
@@ -829,12 +917,20 @@ export class BrowserChainGameFlow {
       transaction,
       "assembled activation transaction",
     );
-    if (this.projection.status.phase >= GamePhase.AWAITING_ACTIVATION) return;
-    await this.context.game.publishExchangeEvent({
-      type: GameEventType.ACTIVATION_AUTHORIZED,
-      transaction,
-    });
+    if (this.projection.status.phase < GamePhase.AWAITING_ACTIVATION) {
+      await this.context.game.publishExchangeEvent({
+        type: GameEventType.ACTIVATION_AUTHORIZED,
+        transaction,
+      });
+      this.projection = this.context.game.currentProjection();
+    }
+    if (this.projection.status.phase !== GamePhase.AWAITING_ACTIVATION) return;
+    const opened = await this.worker.openOffchainRoot(transaction);
+    this.cards = opened.cards ?? opened;
+    await this.context.game.applyOffchainStateReceipt(opened.stateReceipt);
     this.projection = this.context.game.currentProjection();
+    this.stage = "active";
+    this.detail = "The table is open. Moves settle instantly off-chain.";
   }
 
   async #sendChainExchange(exchange) {

@@ -10,6 +10,7 @@ import {
   decodeAcceptedSessionEvent,
   decodeChainExchange,
   decodeRuntimeStatus,
+  decodeOffchainDisputePackage,
   displayTxidToConsensus,
   encodeChainExchange,
   encodeChainInit,
@@ -175,6 +176,30 @@ assert.equal(status.erasureCached, false);
 const inconsistentStatus = statusFrame.slice();
 inconsistentStatus[10] = 0;
 assert.throws(() => decodeRuntimeStatus(inconsistentStatus), /inventory fields disagree/);
+
+const disputeFrame = new Uint8Array(8 + 4 + 3 + 2 + 4 + 2 + 4 + 1 + 32);
+let disputeOffset = 0;
+const put = (value) => { disputeFrame.set(value, disputeOffset); disputeOffset += value.length; };
+const putU16 = (value) => {
+  new DataView(disputeFrame.buffer).setUint16(disputeOffset, value, true);
+  disputeOffset += 2;
+};
+const putU32 = (value) => {
+  new DataView(disputeFrame.buffer).setUint32(disputeOffset, value, true);
+  disputeOffset += 4;
+};
+put(new TextEncoder().encode("BP52DP01"));
+putU32(3); put(Uint8Array.of(1, 2, 3));
+putU16(2);
+putU32(2); put(Uint8Array.of(4, 5));
+putU32(1); put(Uint8Array.of(6));
+put(new Uint8Array(32).fill(7));
+assert.deepEqual(decodeOffchainDisputePackage(disputeFrame), {
+  activation: Uint8Array.of(1, 2, 3),
+  transactions: [Uint8Array.of(4, 5), Uint8Array.of(6)],
+  headNodeId: new Uint8Array(32).fill(7),
+});
+assert.throws(() => decodeOffchainDisputePackage(disputeFrame.slice(0, -1)), /truncated/);
 
 function acceptedSessionEventFrame(setupKind, statusTag, phase, bundle = new Uint8Array()) {
   const frame = new Uint8Array(15 + bundle.byteLength);

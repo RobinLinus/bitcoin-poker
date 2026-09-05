@@ -398,6 +398,11 @@ pub enum SessionIntent {
         /// Confirmed terminal transaction identifier.
         txid: [u8; 32],
     },
+    /// The terminal accounting state is jointly signed but has not touched Bitcoin.
+    SettlementOffchain {
+        /// Latest jointly authorized terminal graph node.
+        node_id: NodeId,
+    },
     /// No further signing or broadcast is permitted.
     Halted {
         /// Stable fail-closed reason suitable for diagnostics.
@@ -521,6 +526,8 @@ pub struct GameSession<'policy> {
     verified_descriptor: Option<bp52_chain_types::VerifiedChainDescriptor>,
     graph_receipt: Option<GraphPreparedReceipt>,
     active_state_receipt: Option<ConfirmedStateReceipt>,
+    active_state_confirmed: bool,
+    confirmed_chain_state_receipt: Option<ConfirmedStateReceipt>,
     activation_transaction: Option<Transaction>,
     pending_runtime_receipt: Option<RuntimeAuthorizationReceipt>,
     pending_spend: Option<PendingSpend>,
@@ -570,6 +577,8 @@ impl<'policy> GameSession<'policy> {
             verified_descriptor: None,
             graph_receipt: None,
             active_state_receipt: None,
+            active_state_confirmed: false,
+            confirmed_chain_state_receipt: None,
             activation_transaction: None,
             pending_runtime_receipt: None,
             pending_spend: None,
@@ -896,6 +905,7 @@ impl<'policy> GameSession<'policy> {
             SessionEvent::RuntimeAuthorized(bytes) => self.accept_runtime_authorization(bytes),
             SessionEvent::SpendConfirmed(fact) => self.accept_confirmed_spend(fact),
             SessionEvent::StateConfirmed(bytes) => self.accept_state_confirmation(bytes),
+            SessionEvent::StateAdvancedOffchain(bytes) => self.accept_offchain_state(bytes),
         }
     }
 
@@ -1375,7 +1385,9 @@ impl<'policy> GameSession<'policy> {
             decode_checked_transaction(&fact.spending_transaction, Some(fact.spending_txid))?;
         let child_node_id =
             match self.phase {
-                SessionPhase::AwaitingActivation => {
+                SessionPhase::AwaitingActivation | SessionPhase::Active | SessionPhase::Settled
+                    if self.confirmed_chain_state_receipt.is_none() =>
+                {
                     if fact.spent_outpoint != self.config.origin_outpoint || fact.input_index != 0 {
                         return Err(SessionError::UnexpectedEvent(
                             "activation spends wrong origin/input",
@@ -1396,13 +1408,10 @@ impl<'policy> GameSession<'policy> {
                         ))?
                         .root_node_id()
                 }
-                SessionPhase::Active => {
-                    let active =
-                        self.active_state_receipt
-                            .as_ref()
-                            .ok_or(SessionError::UnexpectedEvent(
-                                "confirmed-state receipt unavailable",
-                            ))?;
+                SessionPhase::Active | SessionPhase::Settled => {
+                    let active = self.confirmed_chain_state_receipt.as_ref().ok_or(
+                        SessionError::UnexpectedEvent("confirmed chain state receipt unavailable"),
+                    )?;
                     if consensus_outpoint(fact.spent_outpoint) != active.state_outpoint()
                         || fact.input_index != 0
                     {
@@ -1448,7 +1457,7 @@ impl<'policy> GameSession<'policy> {
     fn accept_state_confirmation(&mut self, bytes: &[u8]) -> Result<ProcessResult, SessionError> {
         if !matches!(
             self.phase,
-            SessionPhase::AwaitingActivation | SessionPhase::Active
+            SessionPhase::AwaitingActivation | SessionPhase::Active | SessionPhase::Settled
         ) {
             return Err(SessionError::UnexpectedEvent("confirmed-state receipt"));
         }
@@ -1490,16 +1499,77 @@ impl<'policy> GameSession<'policy> {
                 "state receipt differs from the confirmed spend",
             ));
         }
-        let expected_parent = if self.phase == SessionPhase::AwaitingActivation {
-            None
-        } else {
-            self.active_state_receipt
-                .as_ref()
-                .map(|active| active.state_record().node_id)
-        };
+        let expected_parent = self
+            .confirmed_chain_state_receipt
+            .as_ref()
+            .map(|active| active.state_record().node_id);
         if receipt.spent_node_id() != expected_parent {
             return Err(SessionError::UnexpectedEvent(
                 "state receipt has the wrong predecessor",
+            ));
+        }
+        if let Some(existing) = &self.confirmed_chain_state_receipt {
+            if existing == &receipt {
+                return Ok(ProcessResult::Duplicate);
+            }
+        }
+        let confirmed_node_id = receipt.state_record().node_id;
+        self.confirmed_chain_state_receipt = Some(receipt.clone());
+        let catches_ratchet_head = self
+            .active_state_receipt
+            .as_ref()
+            .is_none_or(|active| active.state_record().node_id == confirmed_node_id);
+        if self.active_state_confirmed || catches_ratchet_head {
+            self.active_state_receipt = Some(receipt);
+            self.active_state_confirmed = true;
+        }
+        let terminal = self
+            .active_state_receipt
+            .as_ref()
+            .is_some_and(ConfirmedStateReceipt::is_terminal);
+        self.pending_runtime_receipt = None;
+        self.pending_spend = None;
+        self.phase = if terminal {
+            SessionPhase::Settled
+        } else {
+            SessionPhase::Active
+        };
+        Ok(ProcessResult::Appended)
+    }
+
+    fn accept_offchain_state(&mut self, bytes: &[u8]) -> Result<ProcessResult, SessionError> {
+        if !matches!(
+            self.phase,
+            SessionPhase::AwaitingActivation | SessionPhase::Active
+        ) {
+            return Err(SessionError::UnexpectedEvent("off-chain state receipt"));
+        }
+        let receipt = ConfirmedStateReceipt::decode_exact(bytes)
+            .map_err(|error| artifact("off-chain state receipt", error))?;
+        let graph = self
+            .graph_receipt
+            .as_ref()
+            .ok_or(SessionError::UnexpectedEvent(
+                "graph-prepared receipt unavailable",
+            ))?;
+        let descriptor = self
+            .verified_descriptor
+            .as_ref()
+            .ok_or(SessionError::UnexpectedEvent(
+                "verified descriptor unavailable",
+            ))?
+            .as_descriptor();
+        verify_confirmed_state_receipt(
+            descriptor,
+            self.shared_config_hash,
+            graph.manifest().graph_root,
+            self.config.local_role,
+            &receipt,
+        )
+        .map_err(|error| artifact("off-chain state receipt", error))?;
+        if receipt.confirmed_height() != 0 {
+            return Err(SessionError::UnexpectedEvent(
+                "off-chain state receipt claims a confirmation height",
             ));
         }
         if let Some(existing) = &self.active_state_receipt {
@@ -1507,10 +1577,49 @@ impl<'policy> GameSession<'policy> {
                 return Ok(ProcessResult::Duplicate);
             }
         }
+        if self.phase == SessionPhase::AwaitingActivation {
+            let activation =
+                self.activation_transaction
+                    .as_ref()
+                    .ok_or(SessionError::UnexpectedEvent(
+                        "authorized activation unavailable",
+                    ))?;
+            if receipt.spent_node_id().is_some()
+                || receipt.spent_outpoint() != consensus_outpoint(self.config.origin_outpoint)
+                || receipt.state_outpoint()[..32] != activation.compute_txid().to_byte_array()
+                || receipt.state_record().node_id != graph.root_node_id()
+            {
+                return Err(SessionError::UnexpectedEvent(
+                    "off-chain root differs from the authorized activation",
+                ));
+            }
+        } else {
+            let active =
+                self.active_state_receipt
+                    .as_ref()
+                    .ok_or(SessionError::UnexpectedEvent(
+                        "active off-chain predecessor unavailable",
+                    ))?;
+            let edge = active
+                .edges()
+                .iter()
+                .find(|edge| edge.edge.child_node_id == receipt.state_record().node_id)
+                .ok_or(SessionError::UnexpectedEvent(
+                    "off-chain receipt selects an unavailable edge",
+                ))?;
+            if receipt.spent_node_id() != Some(active.state_record().node_id)
+                || receipt.spent_outpoint() != active.state_outpoint()
+                || receipt.state_outpoint()[..32] != edge.edge.transaction.txid
+            {
+                return Err(SessionError::UnexpectedEvent(
+                    "off-chain receipt is not contiguous with the ratchet head",
+                ));
+            }
+        }
         let terminal = receipt.is_terminal();
         self.active_state_receipt = Some(receipt);
+        self.active_state_confirmed = false;
         self.pending_runtime_receipt = None;
-        self.pending_spend = None;
         self.phase = if terminal {
             SessionPhase::Settled
         } else {
@@ -1694,26 +1803,37 @@ impl<'policy> GameSession<'policy> {
             .ok_or(SessionError::UnexpectedEvent(
                 "confirmed-state receipt unavailable",
             ))?;
-        let outpoint = outpoint_ref_from_consensus(active.state_outpoint());
+        let outpoint = self
+            .confirmed_chain_state_receipt
+            .as_ref()
+            .map_or(self.config.origin_outpoint, |confirmed| {
+                outpoint_ref_from_consensus(confirmed.state_outpoint())
+            });
         if self.pending_spend.is_some() {
             return Ok(vec![SessionIntent::ObserveState { outpoint }]);
         }
-        let timeout_matures_at = active
-            .state_record()
-            .timeout
-            .map(|timeout| {
-                active
-                    .confirmed_height()
-                    .checked_add(u32::from(timeout.csv))
-                    .ok_or(SessionError::UnexpectedEvent("timeout height overflow"))
-            })
-            .transpose()?;
+        let timeout_matures_at = if self.active_state_confirmed {
+            active
+                .state_record()
+                .timeout
+                .map(|timeout| {
+                    active
+                        .confirmed_height()
+                        .checked_add(u32::from(timeout.csv))
+                        .ok_or(SessionError::UnexpectedEvent("timeout height overflow"))
+                })
+                .transpose()?
+        } else {
+            None
+        };
         let current_height = self.last_tip.map(|tip| tip.height);
         let mut edges = Vec::new();
         for edge in active.edges() {
             if edge.edge.kind.is_timeout()
-                && !timeout_matures_at
-                    .is_some_and(|maturity| current_height.is_some_and(|height| height >= maturity))
+                && (!self.active_state_confirmed
+                    || !timeout_matures_at.is_some_and(|maturity| {
+                        current_height.is_some_and(|height| height >= maturity)
+                    }))
             {
                 continue;
             }
@@ -1751,11 +1871,25 @@ impl<'policy> GameSession<'policy> {
             .ok_or(SessionError::UnexpectedEvent(
                 "settled phase lacks a terminal state receipt",
             ))?;
-        let outpoint = outpoint_ref_from_consensus(receipt.state_outpoint());
-        Ok(vec![SessionIntent::SettlementConfirmed {
-            node_id: receipt.state_record().node_id,
-            txid: outpoint.txid,
-        }])
+        if self.active_state_confirmed {
+            let outpoint = outpoint_ref_from_consensus(receipt.state_outpoint());
+            return Ok(vec![SessionIntent::SettlementConfirmed {
+                node_id: receipt.state_record().node_id,
+                txid: outpoint.txid,
+            }]);
+        }
+        let observed = self
+            .confirmed_chain_state_receipt
+            .as_ref()
+            .map_or(self.config.origin_outpoint, |confirmed| {
+                outpoint_ref_from_consensus(confirmed.state_outpoint())
+            });
+        Ok(vec![
+            SessionIntent::SettlementOffchain {
+                node_id: receipt.state_record().node_id,
+            },
+            SessionIntent::ObserveState { outpoint: observed },
+        ])
     }
 }
 

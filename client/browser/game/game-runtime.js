@@ -60,6 +60,7 @@ const INTENT_NAMES = Object.freeze([
   "choose-runtime-edge",
   "settlement-confirmed",
   "halted",
+  "settlement-offchain",
 ]);
 
 function bytes(value, label) {
@@ -629,6 +630,8 @@ function decodeIntent(encoded) {
     case 11:
       value.reason = decodeText(reader);
       break;
+    case 12:
+      value.nodeId = reader.take(32);
       break;
     default:
       break;
@@ -831,6 +834,14 @@ export class GameWasmSession {
       receipt,
       "confirmed-state receipt",
       "bp52_game_apply_confirmed_state_receipt",
+    );
+  }
+
+  applyOffchainStateReceipt(receipt) {
+    return this.#applyChainReceipt(
+      receipt,
+      "off-chain state receipt",
+      "bp52_game_apply_offchain_state_receipt",
     );
   }
 

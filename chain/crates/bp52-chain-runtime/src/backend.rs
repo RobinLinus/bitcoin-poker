@@ -438,6 +438,26 @@ pub fn attach_offchain_witness(
     prepare_transaction(graph, edge, witness)
 }
 
+/// Validate a selected off-chain witness and transactionally ingest any
+/// public reveal/showdown material it carries.
+///
+/// This does not fabricate a confirmation or unlock CSV paths. It only moves
+/// the caller's authenticated off-chain projection after every witness
+/// predicate and Bitcoin signature has verified.
+pub fn apply_offchain_witness(
+    graph: &dyn ChainBackend,
+    expected_parent_node_id: NodeId,
+    witness: &Witness,
+    public_preimages: &mut crate::PublicPreimageStore,
+) -> Result<PreparedTransaction, RuntimeError> {
+    let prepared = attach_offchain_witness(graph, expected_parent_node_id, witness)?;
+    let mut next_public = public_preimages.clone();
+    next_public.ensure_binding(graph.chain_game_id(), graph.accepted_deal())?;
+    crate::monitor::ingest_public_witness(&mut next_public, witness)?;
+    *public_preimages = next_public;
+    Ok(prepared)
+}
+
 /// Validate and attach a timeout witness after its exact CSV maturity.
 ///
 /// The opaque [`MatureTimeout`] capability proves both that the witness spends

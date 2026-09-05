@@ -7,7 +7,7 @@ import {
   decodeAcceptedSessionEvent,
   decodeChainExchange,
   transferBytes,
-} from "./chain-runtime.js?v=4";
+} from "./chain-runtime.js?v=5";
 import { serializeAsync } from "../worker/serial-dispatch.js";
 import {
   generateLamportBatches,
@@ -22,8 +22,8 @@ import {
 
 const DATABASE = "bp52-chain-secret-v1";
 const STORE = "checkpoints";
-const CHECKPOINT_MAGIC = new TextEncoder().encode("BP52CS04");
-const CHECKPOINT_VERSION = 4;
+const CHECKPOINT_MAGIC = new TextEncoder().encode("BP52CS05");
+const CHECKPOINT_VERSION = 5;
 
 let runtime;
 let chainWasmModule;
@@ -301,6 +301,93 @@ async function acceptRelayMessage(message) {
       activationTransaction: null,
     };
   }
+  if (decoded.package === ChainExchangePackage.ACTION_SIGNATURE_REQUEST) {
+    if (decoded.role === runtime.localRole()) {
+      return {
+        accepted: true,
+        deferred: false,
+        package: decoded.package,
+        role: decoded.role,
+        readyForActivation: readyRoles.size === 2,
+        activationTransaction: null,
+        setup: null,
+        checkpointReceipt: await persistAndReadBack(),
+      };
+    }
+    const artifact = runtime.acceptSelectedActionRequest(decoded.artifact);
+    const checkpointReceipt = await persistAndReadBack();
+    let stateReceipt = null;
+    try { stateReceipt = runtime.offchainStateReceipt(); } catch (_) {}
+    return {
+      accepted: true,
+      deferred: false,
+      package: decoded.package,
+      role: decoded.role,
+      readyForActivation: readyRoles.size === 2,
+      activationTransaction: null,
+      setup: null,
+      responseExchange: await exchangeWithMessageId(runtime.selectedActionResponse(artifact)),
+      stateReceipt,
+      checkpointReceipt,
+    };
+  }
+  if (decoded.package === ChainExchangePackage.OFFCHAIN_TRANSITION) {
+    if (decoded.role === runtime.localRole()) {
+      return {
+        accepted: true,
+        deferred: false,
+        package: decoded.package,
+        role: decoded.role,
+        readyForActivation: readyRoles.size === 2,
+        activationTransaction: null,
+        setup: null,
+        checkpointReceipt: await persistAndReadBack(),
+      };
+    }
+    runtime.commitOffchainWitness(decoded.artifact);
+    const checkpointReceipt = await persistAndReadBack();
+    return {
+      accepted: true,
+      deferred: false,
+      package: decoded.package,
+      role: decoded.role,
+      readyForActivation: readyRoles.size === 2,
+      activationTransaction: null,
+      setup: null,
+      stateReceipt: runtime.offchainStateReceipt(),
+      checkpointReceipt,
+    };
+  }
+  if (decoded.package === ChainExchangePackage.ACTION_SIGNATURE_RESPONSE) {
+    if (decoded.role === runtime.localRole()) {
+      return {
+        accepted: true,
+        deferred: false,
+        package: decoded.package,
+        role: decoded.role,
+        readyForActivation: readyRoles.size === 2,
+        activationTransaction: null,
+        setup: null,
+        checkpointReceipt: await persistAndReadBack(),
+      };
+    }
+    runtime.acceptSelectedActionResponse(decoded.artifact);
+    const checkpointReceipt = await persistAndReadBack();
+    let stateReceipt = null;
+    try { stateReceipt = runtime.offchainStateReceipt(); } catch (_) {}
+    return {
+      accepted: true,
+      deferred: false,
+      package: decoded.package,
+      role: decoded.role,
+      readyForActivation: readyRoles.size === 2,
+      activationTransaction: null,
+      setup: null,
+      runtimeReceipt: stateReceipt ? null : runtime.runtimeAuthorizationReceipt(),
+      stateReceipt,
+      checkpointReceipt,
+    };
+  }
   let value;
   if (
     decoded.package === ChainExchangePackage.PREAUTHORIZATION_OPENING &&
@@ -560,9 +647,39 @@ async function handleMessage(event) {
         }, [stateReceipt]);
         break;
       }
+      case "open-offchain-root": {
+        const result = await durable(() => runtime.openOffchainRoot(event.data.transaction));
+        const stateReceipt = transferable(runtime.offchainStateReceipt());
+        respond(id, {
+          cards: result.value,
+          stateReceipt,
+          checkpointReceipt: result.checkpointReceipt,
+        }, [stateReceipt]);
+        break;
+      }
+      case "dispute-package": {
+        const dispute = runtime.offchainDisputePackage();
+        const activation = transferable(dispute.activation);
+        const transactions = dispute.transactions.map(transferable);
+        const headNodeId = transferable(dispute.headNodeId);
+        respond(id, { activation, transactions, headNodeId }, [
+          activation,
+          ...transactions,
+          headNodeId,
+        ]);
+        break;
+      }
       case "observe-tip": {
         const result = await durable(() => runtime.observeTip(event.data.height));
         respond(id, { checkpointReceipt: result.checkpointReceipt });
+        break;
+      }
+      case "begin-selected-action": {
+        const result = await durable(() => runtime.beginSelectedAction(event.data));
+        respond(id, {
+          exchange: await exchangeWithMessageId(result.value),
+          checkpointReceipt: result.checkpointReceipt,
+        });
         break;
       }
       case "build-action":
@@ -579,8 +696,27 @@ async function handleMessage(event) {
           "build-bob-payout": () => runtime.buildBobPayout(event.data),
           "build-timeout": () => runtime.buildTimeout(),
         };
+        let offchain = false;
+        try {
+          runtime.offchainStateReceipt();
+          offchain = true;
+        } catch (_) {}
         const result = await durable(operations[type]);
         const witness = transferable(result.value);
+        if (offchain) {
+          if (type === "build-timeout") {
+            throw new Error("CSV timeout construction requires a confirmed chain state");
+          }
+          const advanced = await durable(() => runtime.commitOffchainWitness(result.value));
+          const stateReceipt = transferable(runtime.offchainStateReceipt());
+          respond(id, {
+            witness,
+            stateReceipt,
+            exchange: await exchangeWithMessageId(runtime.offchainTransition(result.value)),
+            checkpointReceipt: advanced.checkpointReceipt,
+          }, [witness, stateReceipt]);
+          break;
+        }
         const runtimeReceipt = transferable(runtime.runtimeAuthorizationReceipt());
         respond(id, {
           witness,
