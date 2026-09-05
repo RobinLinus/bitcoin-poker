@@ -41,8 +41,8 @@
     {
       "name": "chain",
       "url": "/wasm/chain.wasm",
-      "sha256": "280c2a200afa75fe93698c095a4ad99b9f5a42d343d39c4cf2cea7302dcef707",
-      "sizeBytes": 2810930,
+      "sha256": "1c53d40ee6c106a4836d02ab0c7b62193b284b691114e4b4a89943596198163e",
+      "sizeBytes": 2810812,
       "securityBoundary": "chain-secret-worker"
     },
     {

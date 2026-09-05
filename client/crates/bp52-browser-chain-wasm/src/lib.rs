@@ -2760,7 +2760,6 @@ impl ChainEngine {
             if state.phase < Phase::InventoryVerified {
                 return Err("checkpoint inventory flag precedes its phase".to_owned());
             }
-            let _ = self.attest_inventory()?;
             let attestation = state
                 .inventory_attestation
                 .ok_or_else(|| "verified checkpoint inventory has no attestation".to_owned())?;
@@ -2782,6 +2781,12 @@ impl ChainEngine {
                 ),
                 attestation,
             )?;
+            // Readiness was attested while every Lamport key was fresh. An
+            // active checkpoint can legitimately contain erased keys, so
+            // recovery verifies that durable identity signature rather than
+            // incorrectly trying to issue a new freshness attestation.
+            self.inventory_verified = true;
+            self.phase = Phase::InventoryVerified;
             self.inventory_attestation = Some(attestation);
         } else if state.inventory_attestation.is_some() || state.phase >= Phase::InventoryVerified {
             return Err("checkpoint inventory state is inconsistent".to_owned());
