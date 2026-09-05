@@ -3,6 +3,10 @@
 
 /// Pure local betting-tree expansion.
 pub mod betting;
+/// Complete on-chain graph backed by authenticated dlog card candidates.
+pub mod dlog;
+/// Verified, resumable dlog authorization preparation.
+pub mod dlog_preparation;
 mod error;
 /// Authenticated commit-then-open graph and signature-bundle exchange.
 pub mod exchange;

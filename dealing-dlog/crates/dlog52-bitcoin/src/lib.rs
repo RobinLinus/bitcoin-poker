@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 //! Regtest-only DLOG52 tapscript card gates.
 
+/// Verifiable on-chain disclosure of dlog openings using adaptor preauthorizations.
+pub mod reveal;
+
 use bitcoin::{
     ScriptBuf, Transaction, TxOut, Witness, XOnlyPublicKey,
     key::Secp256k1,
@@ -459,7 +462,8 @@ mod tests {
         assert_eq!(manifest.slots.len(), 9);
         assert!(manifest.slots.iter().all(|slot| slot.leaves.len() == 103));
         assert_eq!(manifest.profile, "DLOG52-regtest-single-slot-gate-v1");
-        let leaf = &manifest.slots[0].leaves[0];
+        let raw_sum = secrets_a.openings[0].value() + secrets_b.openings[0].value();
+        let leaf = &manifest.slots[0].leaves[usize::from(raw_sum)];
         let witness = assemble_gate_witness(leaf, &[0x11; 64], &[0x22; 64]);
         let elements = witness.iter().collect::<Vec<_>>();
         assert_eq!(elements[0], &[0x22; 64]);
@@ -508,6 +512,8 @@ mod tests {
         .expect("opening B");
         let card_key =
             derive_card_signing_key(&accepted, 0, &opening_a, &opening_b).expect("card key");
+        assert_eq!(card_key.raw_sum(), leaf.raw_sum);
+        assert_eq!(card_key.card_id(), leaf.card_id);
         let card_signature = card_key
             .sign_tapscript_sighash(&sighash, &[0x55; 32])
             .expect("card signature")

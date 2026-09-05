@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 use bitcoin::blockdata::opcodes::all::{
     OP_ADD, OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CSV, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF,
-    OP_EQUALVERIFY, OP_FROMALTSTACK, OP_GREATERTHAN, OP_GREATERTHANOREQUAL, OP_IF,
+    OP_EQUALVERIFY, OP_FROMALTSTACK, OP_GREATERTHAN, OP_GREATERTHANOREQUAL, OP_IF, OP_LESSTHAN,
     OP_LESSTHANOREQUAL, OP_NUMEQUAL, OP_NUMEQUALVERIFY, OP_NUMNOTEQUAL, OP_PICK, OP_RETURN,
     OP_SHA256, OP_SIZE, OP_SUB, OP_SWAP, OP_TOALTSTACK, OP_VERIFY,
 };
@@ -35,7 +35,7 @@ use crate::{
     ShareRevealPredicate, ShowdownHandWitness, verify_showdown_hand,
 };
 
-/// Consensus maximum serialized script size.
+/// Legacy profile script-size bound. Tapscript has no consensus 10,000-byte limit.
 pub const MAX_CONSENSUS_SCRIPT_BYTES: usize = 10_000;
 /// Consensus maximum ordinary witness stack-element size.
 pub const MAX_WITNESS_ELEMENT_BYTES: usize = 520;
@@ -66,6 +66,8 @@ pub enum LeafProgram {
     Action(ActionProgram),
     /// Both fixed Bitcoin signatures plus exact committed share preimages.
     Reveal(RevealProgram),
+    /// Reusable dlog adaptor openings plus the revealer live signature.
+    DlogReveal(DlogRevealProgram),
     /// Opponent preauthorization plus beneficiary live signature after CSV.
     Timeout(TimeoutProgram),
     /// Alice openings, one category-specific lower-bound proof, and score certificate.
@@ -81,7 +83,7 @@ impl LeafProgram {
         match self {
             Self::AliceShowdown(program) => program.claimed_category(),
             Self::BobPayout(program) => program.claimed_category(),
-            Self::Action(_) | Self::Reveal(_) | Self::Timeout(_) => None,
+            Self::Action(_) | Self::Reveal(_) | Self::DlogReveal(_) | Self::Timeout(_) => None,
         }
     }
 
@@ -90,7 +92,11 @@ impl LeafProgram {
     pub const fn showdown_outcome(&self) -> Option<ShowdownOutcome> {
         match self {
             Self::BobPayout(program) => Some(program.outcome),
-            Self::Action(_) | Self::Reveal(_) | Self::Timeout(_) | Self::AliceShowdown(_) => None,
+            Self::Action(_)
+            | Self::Reveal(_)
+            | Self::DlogReveal(_)
+            | Self::Timeout(_)
+            | Self::AliceShowdown(_) => None,
         }
     }
     /// Return the complete canonical semantic program encoding.
@@ -101,6 +107,10 @@ impl LeafProgram {
         match self {
             Self::Action(program) => program.encode_into(&mut encoded),
             Self::Reveal(program) => program.encode_into(&mut encoded),
+            Self::DlogReveal(program) => {
+                encoded.push(5);
+                encoded.extend_from_slice(program.script.as_bytes());
+            }
             Self::Timeout(program) => program.encode_into(&mut encoded),
             Self::AliceShowdown(program) => program.encode_into(&mut encoded),
             Self::BobPayout(program) => program.encode_into(&mut encoded),
@@ -123,6 +133,7 @@ impl LeafProgram {
         match self {
             Self::Action(_) | Self::Timeout(_) => Ok(2),
             Self::Reveal(program) => Ok(2 + program.predicate.expected_hashes().len()),
+            Self::DlogReveal(program) => Ok(program.elements),
             Self::AliceShowdown(_) => Ok(ALICE_SHOWDOWN_WITNESS_ELEMENTS),
             Self::BobPayout(_) => Ok(BOB_PAYOUT_WITNESS_ELEMENTS),
         }
@@ -132,17 +143,32 @@ impl LeafProgram {
     ///
     /// # Errors
     ///
-    /// Rejects scripts over Bitcoin's consensus size limit. It never emits a
+    /// Rejects scripts over the selected profile's size limit. It never emits a
     /// weakened or placeholder spend.
     pub fn to_tapscript(&self) -> Result<ScriptBuf, BitcoinBackendError> {
         let script = match self {
             Self::Action(program) => program.to_tapscript(),
             Self::Reveal(program) => program.to_tapscript(),
+            Self::DlogReveal(program) => program.script.clone(),
             Self::Timeout(program) => program.to_tapscript(),
             Self::AliceShowdown(program) => program.to_tapscript(),
             Self::BobPayout(program) => program.to_tapscript(),
         };
-        validate_script_size(&script)?;
+        let dlog = match self {
+            Self::AliceShowdown(p) => p.openings.is_dlog(),
+            Self::BobPayout(p) => p.openings.is_dlog(),
+            _ => false,
+        };
+        if dlog {
+            if script.len() > 65_536 {
+                return Err(BitcoinBackendError::OversizedConsensusScript {
+                    actual: script.len(),
+                    maximum: 65_536,
+                });
+            }
+        } else {
+            validate_script_size(&script)?;
+        }
         Ok(script)
     }
 }
@@ -197,6 +223,29 @@ impl ActionProgram {
             .push_int(i64::from(self.action.code()))
             .push_opcode(OP_DROP);
         append_terminal_signature_checks(builder, &self.authorizers).into_script()
+    }
+}
+
+/// Exact candidate-adaptor checks for one on-chain dlog reveal obligation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DlogRevealProgram {
+    script: ScriptBuf,
+    elements: usize,
+}
+impl DlogRevealProgram {
+    /// Bind the accepted deal, node, actor, and distinct per-slot authorizers.
+    pub fn new(
+        deal_id: [u8; 32],
+        node_id: [u8; 32],
+        actor: [u8; 32],
+        slots: &[(u8, [u8; 32])],
+    ) -> Result<Self, BitcoinBackendError> {
+        let script = dlog52_bitcoin::reveal::reveal_tapscript(deal_id, node_id, actor, slots)
+            .map_err(|_| BitcoinBackendError::InvalidBitcoinSignature)?;
+        Ok(Self {
+            script,
+            elements: 1 + slots.len(),
+        })
     }
 }
 
@@ -330,13 +379,32 @@ impl TimeoutProgram {
 pub struct AliceShowdownProgram {
     chain_game_id: [u8; 32],
     node_id: [u8; 32],
-    opening_hashes: Vec<[[u8; 32]; 2]>,
+    openings: ShowdownOpenings,
     score_public_key: LamportPublicKey,
     authorizers: [[u8; 32]; 2],
     claimed_category: Option<HandCategory>,
 }
 
 impl AliceShowdownProgram {
+    /// Construct the dlog predicate from a replay-verified candidate catalogue.
+    /// Each of seven cards is authenticated under this transaction's sighash.
+    pub fn new_dlog(
+        deal: &dlog52_protocol::VerifiedAcceptedDeal,
+        chain_game_id: [u8; 32],
+        node_id: [u8; 32],
+        score_public_key: LamportPublicKey,
+        authorizers: [[u8; 32]; 2],
+    ) -> Result<Self, BitcoinBackendError> {
+        Self::new_inner(
+            ShowdownOpenings::dlog(deal, &ALICE_SEVEN_SLOTS)?,
+            chain_game_id,
+            node_id,
+            score_public_key,
+            authorizers,
+            None,
+        )
+    }
+
     /// Construct the deterministic program description.
     ///
     /// # Errors
@@ -350,7 +418,7 @@ impl AliceShowdownProgram {
         authorizers: [[u8; 32]; 2],
     ) -> Result<Self, BitcoinBackendError> {
         Self::new_inner(
-            deal,
+            ShowdownOpenings::Legacy(opening_hashes(deal, &ALICE_SEVEN_SLOTS)),
             chain_game_id,
             node_id,
             score_public_key,
@@ -369,7 +437,7 @@ impl AliceShowdownProgram {
         claimed_category: HandCategory,
     ) -> Result<Self, BitcoinBackendError> {
         Self::new_inner(
-            deal,
+            ShowdownOpenings::Legacy(opening_hashes(deal, &ALICE_SEVEN_SLOTS)),
             chain_game_id,
             node_id,
             score_public_key,
@@ -379,7 +447,7 @@ impl AliceShowdownProgram {
     }
 
     fn new_inner(
-        deal: &AcceptedDeal,
+        openings: ShowdownOpenings,
         chain_game_id: [u8; 32],
         node_id: [u8; 32],
         score_public_key: LamportPublicKey,
@@ -400,7 +468,7 @@ impl AliceShowdownProgram {
         Ok(Self {
             chain_game_id,
             node_id,
-            opening_hashes: opening_hashes(deal, &ALICE_SEVEN_SLOTS),
+            openings,
             score_public_key,
             authorizers,
             claimed_category,
@@ -418,7 +486,7 @@ impl AliceShowdownProgram {
         encoded.extend_from_slice(&self.chain_game_id);
         encoded.extend_from_slice(&self.node_id);
         append_keys(encoded, &self.authorizers);
-        append_opening_hashes(encoded, &self.opening_hashes);
+        self.openings.encode_into(encoded);
         append_length_prefixed(encoded, &self.score_public_key.encode());
         encoded.push(match self.claimed_category {
             Some(category) => category.as_u8(),
@@ -428,7 +496,7 @@ impl AliceShowdownProgram {
 
     fn to_tapscript(&self) -> ScriptBuf {
         let builder = Builder::new();
-        let builder = append_seven_card_openings(builder, &self.opening_hashes);
+        let builder = self.openings.append_to(builder);
         let builder = append_subset_selection(builder);
         let builder = match self.claimed_category {
             Some(category) => append_eval5_for_category(builder, category),
@@ -450,7 +518,7 @@ pub struct BobPayoutProgram {
     node_id: [u8; 32],
     alice_showdown_node_id: [u8; 32],
     outcome: ShowdownOutcome,
-    opening_hashes: Vec<[[u8; 32]; 2]>,
+    openings: ShowdownOpenings,
     alice_score_public_key: LamportPublicKey,
     bob_score_public_key: LamportPublicKey,
     alice_authorizer: [u8; 32],
@@ -459,6 +527,32 @@ pub struct BobPayoutProgram {
 }
 
 impl BobPayoutProgram {
+    /// Construct a dlog payout, repeating candidate authentication of Bob's
+    /// cards and authenticating both score certificates before comparison.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_dlog(
+        deal: &dlog52_protocol::VerifiedAcceptedDeal,
+        chain_game_id: [u8; 32],
+        node_id: [u8; 32],
+        alice_showdown_node_id: [u8; 32],
+        outcome: ShowdownOutcome,
+        alice_score_public_key: LamportPublicKey,
+        bob_score_public_key: LamportPublicKey,
+        terminal_authorizers: [[u8; 32]; 2],
+    ) -> Result<Self, BitcoinBackendError> {
+        Self::new_inner(
+            ShowdownOpenings::dlog(deal, &BOB_SEVEN_SLOTS)?,
+            chain_game_id,
+            node_id,
+            alice_showdown_node_id,
+            outcome,
+            alice_score_public_key,
+            bob_score_public_key,
+            terminal_authorizers,
+            None,
+        )
+    }
+
     /// Construct one branch-specific deterministic terminal program description.
     /// `terminal_authorizers` is ordered as Alice's fixed preauthorization
     /// followed by Bob's live terminal key.
@@ -480,7 +574,7 @@ impl BobPayoutProgram {
         terminal_authorizers: [[u8; 32]; 2],
     ) -> Result<Self, BitcoinBackendError> {
         Self::new_inner(
-            deal,
+            ShowdownOpenings::Legacy(opening_hashes(deal, &BOB_SEVEN_SLOTS)),
             chain_game_id,
             node_id,
             alice_showdown_node_id,
@@ -506,7 +600,7 @@ impl BobPayoutProgram {
         claimed_category: HandCategory,
     ) -> Result<Self, BitcoinBackendError> {
         Self::new_inner(
-            deal,
+            ShowdownOpenings::Legacy(opening_hashes(deal, &BOB_SEVEN_SLOTS)),
             chain_game_id,
             node_id,
             alice_showdown_node_id,
@@ -520,7 +614,7 @@ impl BobPayoutProgram {
 
     #[allow(clippy::too_many_arguments)]
     fn new_inner(
-        deal: &AcceptedDeal,
+        openings: ShowdownOpenings,
         chain_game_id: [u8; 32],
         node_id: [u8; 32],
         alice_showdown_node_id: [u8; 32],
@@ -556,7 +650,7 @@ impl BobPayoutProgram {
             node_id,
             alice_showdown_node_id,
             outcome,
-            opening_hashes: opening_hashes(deal, &BOB_SEVEN_SLOTS),
+            openings,
             alice_score_public_key,
             bob_score_public_key,
             alice_authorizer: terminal_authorizers[0],
@@ -579,7 +673,7 @@ impl BobPayoutProgram {
         encoded.push(self.outcome.code());
         encoded.extend_from_slice(&self.alice_authorizer);
         encoded.extend_from_slice(&self.bob_live_key);
-        append_opening_hashes(encoded, &self.opening_hashes);
+        self.openings.encode_into(encoded);
         append_length_prefixed(encoded, &self.alice_score_public_key.encode());
         append_length_prefixed(encoded, &self.bob_score_public_key.encode());
         encoded.push(match self.claimed_category {
@@ -590,7 +684,7 @@ impl BobPayoutProgram {
 
     fn to_tapscript(&self) -> ScriptBuf {
         let builder = Builder::new();
-        let builder = append_seven_card_openings(builder, &self.opening_hashes);
+        let builder = self.openings.append_to(builder);
         let builder = append_subset_selection(builder);
         let builder = match self.claimed_category {
             Some(category) => append_eval5_for_category(builder, category),
@@ -985,7 +1079,9 @@ pub fn assemble_bob_payout_witness_elements(
     Ok(elements)
 }
 
-fn alice_score_certificate_elements(certificate: &AliceScoreCertificate) -> Vec<Vec<u8>> {
+pub(crate) fn alice_score_certificate_elements(
+    certificate: &AliceScoreCertificate,
+) -> Vec<Vec<u8>> {
     score_certificate_elements(
         certificate.score_a(),
         LamportMessage::AliceScore(certificate.score_a()),
@@ -993,7 +1089,7 @@ fn alice_score_certificate_elements(certificate: &AliceScoreCertificate) -> Vec<
     )
 }
 
-fn bob_score_certificate_elements(certificate: &BobScoreCertificate) -> Vec<Vec<u8>> {
+pub(crate) fn bob_score_certificate_elements(certificate: &BobScoreCertificate) -> Vec<Vec<u8>> {
     score_certificate_elements(
         certificate.score_b(),
         LamportMessage::BobScore(certificate.score_b()),
@@ -1031,6 +1127,108 @@ fn append_hand_elements(
         elements.push(opening.preimage_b().to_vec());
     }
     Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ShowdownOpenings {
+    Legacy(Vec<[[u8; 32]; 2]>),
+    Dlog {
+        deal_id: [u8; 32],
+        keys: Vec<Vec<[u8; 32]>>,
+    },
+}
+
+impl ShowdownOpenings {
+    fn is_dlog(&self) -> bool {
+        matches!(self, Self::Dlog { .. })
+    }
+
+    fn dlog(
+        deal: &dlog52_protocol::VerifiedAcceptedDeal,
+        slots: &[u8; 7],
+    ) -> Result<Self, BitcoinBackendError> {
+        let mut keys = Vec::with_capacity(7);
+        for slot in slots {
+            let mut candidates = Vec::with_capacity(103);
+            for key in &deal.catalogue().keys[usize::from(*slot)] {
+                candidates.push(dlog52_protocol::point_xonly(key).map_err(|_| {
+                    BitcoinBackendError::InvalidXOnlyPublicKey {
+                        purpose: "dlog candidate",
+                    }
+                })?);
+            }
+            keys.push(candidates);
+        }
+        Ok(Self::Dlog {
+            deal_id: dlog52_protocol::accepted_body_hash(&deal.as_deal().body),
+            keys,
+        })
+    }
+
+    fn encode_into(&self, encoded: &mut Vec<u8>) {
+        match self {
+            Self::Legacy(hashes) => append_opening_hashes(encoded, hashes),
+            Self::Dlog { deal_id, keys } => {
+                // 255 cannot be the legacy seven-card opening count.
+                encoded.push(255);
+                encoded.extend_from_slice(deal_id);
+                for slot in keys {
+                    for key in slot {
+                        encoded.extend_from_slice(key);
+                    }
+                }
+            }
+        }
+    }
+
+    fn append_to(&self, mut builder: Builder) -> Builder {
+        let (deal_id, keys) = match self {
+            Self::Legacy(hashes) => return append_seven_card_openings(builder, hashes),
+            Self::Dlog { deal_id, keys } => (deal_id, keys),
+        };
+        builder = builder.push_slice(deal_id).push_opcode(OP_DROP);
+        // Pair order: signature, raw sum. The last slot is at the stack top.
+        for candidates in keys.iter().rev() {
+            builder = builder
+                .push_opcode(OP_DUP)
+                .push_int(0)
+                .push_opcode(OP_GREATERTHANOREQUAL)
+                .push_opcode(OP_VERIFY)
+                .push_opcode(OP_DUP)
+                .push_int(102)
+                .push_opcode(OP_LESSTHANOREQUAL)
+                .push_opcode(OP_VERIFY)
+                .push_opcode(OP_DUP)
+                .push_opcode(OP_DUP)
+                .push_int(52)
+                .push_opcode(OP_GREATERTHANOREQUAL)
+                .push_opcode(OP_IF)
+                .push_int(52)
+                .push_opcode(OP_SUB)
+                .push_opcode(OP_ENDIF)
+                .push_opcode(OP_TOALTSTACK);
+            builder =
+                append_candidate_selector(builder, candidates, 0).push_opcode(OP_CHECKSIGVERIFY);
+        }
+        for _ in 0..7 {
+            builder = builder.push_opcode(OP_FROMALTSTACK);
+        }
+        append_distinct_seven(builder)
+    }
+}
+
+fn append_candidate_selector(builder: Builder, keys: &[[u8; 32]], first: usize) -> Builder {
+    if keys.len() == 1 {
+        return builder.push_opcode(OP_DROP).push_slice(keys[0]);
+    }
+    let left = keys.len() / 2;
+    let builder = builder
+        .push_opcode(OP_DUP)
+        .push_int((first + left) as i64)
+        .push_opcode(OP_LESSTHAN)
+        .push_opcode(OP_IF);
+    let builder = append_candidate_selector(builder, &keys[..left], first).push_opcode(OP_ELSE);
+    append_candidate_selector(builder, &keys[left..], first + left).push_opcode(OP_ENDIF)
 }
 
 fn append_seven_card_openings(mut builder: Builder, opening_hashes: &[[[u8; 32]; 2]]) -> Builder {

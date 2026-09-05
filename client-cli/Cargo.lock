@@ -364,6 +364,8 @@ dependencies = [
  "bp52-chain-types",
  "bp52-lamport",
  "bp52-poker",
+ "dlog52-bitcoin",
+ "dlog52-protocol",
  "sha2",
  "thiserror 2.0.20",
 ]
@@ -379,6 +381,8 @@ dependencies = [
  "bp52-lamport",
  "bp52-poker",
  "bp52-protocol",
+ "dlog52-bitcoin",
+ "dlog52-protocol",
  "sha2",
  "thiserror 2.0.20",
  "zeroize",
@@ -1066,6 +1070,92 @@ dependencies = [
 ]
 
 [[package]]
+name = "dlog52-bitcoin"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "dlog52-group",
+ "dlog52-protocol",
+ "k256",
+ "musig2",
+ "sha2",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dlog52-codec"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dlog52-group"
+version = "0.1.0"
+dependencies = [
+ "dlog52-codec",
+ "dlog52-transcript",
+ "k256",
+ "once_cell",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dlog52-proofs"
+version = "0.1.0"
+dependencies = [
+ "dlog52-codec",
+ "dlog52-group",
+ "dlog52-transcript",
+ "k256",
+ "rand_core 0.6.4",
+ "subtle",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
+name = "dlog52-protocol"
+version = "0.1.0"
+dependencies = [
+ "dlog52-codec",
+ "dlog52-group",
+ "dlog52-proofs",
+ "dlog52-transcript",
+ "dlog52-uniqueness",
+ "k256",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
+name = "dlog52-transcript"
+version = "0.1.0"
+dependencies = [
+ "dlog52-codec",
+ "k256",
+ "sha2",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dlog52-uniqueness"
+version = "0.1.0"
+dependencies = [
+ "dlog52-codec",
+ "dlog52-group",
+ "dlog52-transcript",
+ "k256",
+ "rand_core 0.6.4",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1082,6 +1172,7 @@ dependencies = [
  "elliptic-curve",
  "rfc6979",
  "signature",
+ "spki",
 ]
 
 [[package]]
@@ -1126,6 +1217,7 @@ dependencies = [
  "ff",
  "generic-array",
  "group",
+ "pkcs8",
  "rand_core 0.6.4",
  "sec1",
  "subtle",
@@ -1918,7 +2010,9 @@ dependencies = [
  "cfg-if",
  "ecdsa",
  "elliptic-curve",
+ "once_cell",
  "sha2",
+ "signature",
 ]
 
 [[package]]
@@ -2507,6 +2601,21 @@ dependencies = [
  "pin-project",
  "smallvec",
  "unsigned-varint 0.7.2",
+]
+
+[[package]]
+name = "musig2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "355f4af4f1e9b45cada7d482f3e7c5342574ed1f8285e2dea6904bf28884cbd8"
+dependencies = [
+ "base16ct",
+ "hmac",
+ "k256",
+ "once_cell",
+ "secp",
+ "sha2",
+ "subtle",
 ]
 
 [[package]]
@@ -3265,8 +3374,21 @@ dependencies = [
  "base16ct",
  "der",
  "generic-array",
+ "pkcs8",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "secp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3b203895e8f18854c828d1cf7e5710683c3abc28d79330fe5ab723ce5b76e1"
+dependencies = [
+ "base16ct",
+ "k256",
+ "once_cell",
+ "subtle",
 ]
 
 [[package]]

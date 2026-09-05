@@ -18,7 +18,7 @@ wallet=${BP52_CORE_WALLET_NAME:-bp52-core-qualification}
 rpc_port=$((24000 + ($$ % 10000)))
 
 usage() {
-    echo "usage: $0 [--native | --docker] [--suite all|leaf|paths|mutinynet] [--require] [--keep-datadir]"
+    echo "usage: $0 [--native | --docker] [--suite all|leaf|paths|mutinynet|dlog|dlog-graph] [--require] [--keep-datadir]"
     echo
     echo "  --native         require bitcoind and bitcoin-cli on PATH"
     echo "  --docker         require an already-cached ${image} image"
@@ -40,7 +40,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         --suite)
             if [ "$#" -lt 2 ]; then
-                echo "error: --suite requires all, leaf, paths, or mutinynet" >&2
+                echo "error: --suite requires all, leaf, paths, mutinynet, dlog, or dlog-graph" >&2
                 exit 2
             fi
             suite=$2
@@ -63,10 +63,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$suite" in
-    all|leaf|paths|mutinynet)
+    all|leaf|paths|mutinynet|dlog|dlog-graph)
         ;;
     *)
-        echo "error: --suite requires all, leaf, paths, or mutinynet" >&2
+        echo "error: --suite requires all, leaf, paths, mutinynet, dlog, or dlog-graph" >&2
         exit 2
         ;;
 esac
@@ -156,6 +156,19 @@ trap cleanup EXIT HUP INT TERM
 
 run_rust_suite() {
     case "$suite" in
+        dlog)
+            "$cargo_path" test --manifest-path ../dealing-dlog/Cargo.toml \
+                -p dlog52-bitcoin --test bitcoin_core_regtest --locked \
+                -- --ignored --exact bitcoin_core_regtest_dlog52 --nocapture
+            "$cargo_path" test -p bp52-chain-bitcoin --test dlog52_core_regtest --locked \
+                -- --ignored --exact bitcoin_core_regtest_dlog52_showdown --nocapture
+            "$cargo_path" test -p bp52-chain-compiler --test dlog_core_regtest --locked \
+                -- --ignored --exact bitcoin_core_regtest_dlog_graph --nocapture
+            ;;
+        dlog-graph)
+            "$cargo_path" test -p bp52-chain-compiler --test dlog_core_regtest --locked \
+                -- --ignored --exact bitcoin_core_regtest_dlog_graph --nocapture
+            ;;
         leaf)
             "$cargo_path" test -p bp52-chain-bitcoin --test bitcoin_core_regtest \
                 --locked -- --ignored --exact bitcoin_core_regtest_leaf_classes --nocapture

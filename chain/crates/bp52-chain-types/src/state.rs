@@ -1,9 +1,6 @@
 //! Fixed-limit amount and betting states.
 
-use crate::{
-    ChainError,
-    descriptor::{ChainGameDescriptor, Role},
-};
+use crate::{ChainError, PokerRules, descriptor::Role};
 
 /// Fixed-limit betting street.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -167,7 +164,8 @@ impl TimeoutSpec {
 
     /// Selects the descriptor delay for this timeout class.
     #[must_use]
-    pub const fn descriptor_csv(kind: TimeoutKind, descriptor: &ChainGameDescriptor) -> u16 {
+    pub fn descriptor_csv(kind: TimeoutKind, descriptor: impl Into<PokerRules>) -> u16 {
+        let descriptor = &descriptor.into();
         match kind {
             TimeoutKind::Action => descriptor.action_csv,
             TimeoutKind::Reveal => descriptor.reveal_csv,
@@ -192,7 +190,8 @@ pub struct AmountState {
 impl AmountState {
     /// Creates the pre-blind funding amount state.
     #[must_use]
-    pub const fn funded(descriptor: &ChainGameDescriptor) -> Self {
+    pub fn funded(descriptor: impl Into<PokerRules>) -> Self {
+        let descriptor = &descriptor.into();
         Self {
             alice_remaining: descriptor.alice_starting_stack_sat,
             bob_remaining: descriptor.bob_starting_stack_sat,
@@ -326,7 +325,8 @@ impl BettingState {
     ///
     /// Returns an arithmetic or insufficient-stack error on malformed
     /// descriptor amounts.
-    pub fn initial_preflop(descriptor: &ChainGameDescriptor) -> Result<Self, ChainError> {
+    pub fn initial_preflop(descriptor: impl Into<PokerRules>) -> Result<Self, ChainError> {
+        let descriptor = &descriptor.into();
         if descriptor.unit_sat == 0 {
             return Err(ChainError::ZeroUnit);
         }
@@ -364,9 +364,10 @@ impl BettingState {
     /// Rejects `Preflop`, which must be created by [`Self::initial_preflop`].
     pub fn start_postflop(
         street: Street,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         amounts: AmountState,
     ) -> Result<Self, ChainError> {
+        let descriptor = &descriptor.into();
         if descriptor.unit_sat == 0 {
             return Err(ChainError::ZeroUnit);
         }
@@ -423,7 +424,8 @@ impl BettingState {
     /// # Errors
     ///
     /// Returns [`ChainError::InvalidBettingState`] or an arithmetic error.
-    pub fn validate(self, descriptor: &ChainGameDescriptor) -> Result<(), ChainError> {
+    pub fn validate(self, descriptor: impl Into<PokerRules>) -> Result<(), ChainError> {
+        let descriptor = &descriptor.into();
         if descriptor.unit_sat == 0 {
             return Err(ChainError::ZeroUnit);
         }
@@ -475,8 +477,9 @@ impl BettingState {
     /// Rejects a malformed or completed state rather than inventing an edge.
     pub fn legal_actions(
         self,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
     ) -> Result<Vec<Action>, ChainError> {
+        let descriptor = &descriptor.into();
         self.validate(descriptor)?;
         let to_call = self.to_call()?;
         if to_call > 0 {
@@ -519,9 +522,10 @@ impl BettingState {
     /// Rejects illegal labels, malformed states, and arithmetic failures.
     pub fn apply_action(
         self,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         action: Action,
     ) -> Result<BettingTransition, ChainError> {
+        let descriptor = &descriptor.into();
         if !self.legal_actions(descriptor)?.contains(&action) {
             return Err(ChainError::IllegalAction { action });
         }
@@ -551,7 +555,11 @@ impl BettingState {
         BettingTransition::Continue(next)
     }
 
-    fn apply_call(self, descriptor: &ChainGameDescriptor) -> Result<BettingTransition, ChainError> {
+    fn apply_call(
+        self,
+        descriptor: impl Into<PokerRules>,
+    ) -> Result<BettingTransition, ChainError> {
+        let descriptor = &descriptor.into();
         let to_call = self.to_call()?;
         let amounts = self.amounts.commit_to_pot(self.actor, to_call)?;
         let mut next = self;
@@ -586,9 +594,10 @@ impl BettingState {
 
     fn apply_aggression(
         self,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         is_raise: bool,
     ) -> Result<BettingTransition, ChainError> {
+        let descriptor = &descriptor.into();
         let new_wager = self.aggression_target(descriptor, is_raise)?;
         let transfer = new_wager
             .checked_sub(self.committed(self.actor))
@@ -614,7 +623,8 @@ impl BettingState {
             .ok_or(ChainError::ArithmeticOverflow)
     }
 
-    fn validate_amounts(self, descriptor: &ChainGameDescriptor) -> Result<[u64; 2], ChainError> {
+    fn validate_amounts(self, descriptor: impl Into<PokerRules>) -> Result<[u64; 2], ChainError> {
+        let descriptor = &descriptor.into();
         let capacities = [
             self.street_capacity(Role::Alice)?,
             self.street_capacity(Role::Bob)?,
@@ -666,12 +676,13 @@ impl BettingState {
 
     fn validate_decision_shape(
         self,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         increment: u64,
         nominal_wager: u64,
         capacities: [u64; 2],
         to_call: u64,
     ) -> Result<(), ChainError> {
+        let descriptor = &descriptor.into();
         if to_call > 0 {
             if self.committed(self.actor.other()) != self.current_wager {
                 return Err(invalid_state("aggressor did not commit the current wager"));
@@ -704,9 +715,10 @@ impl BettingState {
 
     fn validate_initial_actor(
         self,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         increment: u64,
     ) -> Result<(), ChainError> {
+        let descriptor = &descriptor.into();
         if self.bets_used == 0 {
             let expected_actor = if self.consecutive_checks == 0 {
                 descriptor.nonbutton()
@@ -744,9 +756,10 @@ impl BettingState {
 
     fn aggression_target(
         self,
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         is_raise: bool,
     ) -> Result<u64, ChainError> {
+        let descriptor = &descriptor.into();
         let increment = self.street.increment(descriptor.unit_sat)?;
         let nominal_target = if is_raise {
             self.current_wager

@@ -12,11 +12,13 @@ dlog52-protocol = { path = "../dlog52-protocol" }
 k256.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+musig2 = { version = "=0.4.0", default-features = false, features = ["k256"] }
 
 [dev-dependencies]
 dlog52-codec = { path = "../dlog52-codec" }
 dlog52-openings = { path = "../dlog52-openings" }
 rand_chacha.workspace = true
+bp52-core-test-support = { path = "../../../chain/crates/bp52-core-test-support" }
 
 [lints]
 workspace = true

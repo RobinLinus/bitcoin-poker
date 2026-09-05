@@ -1,7 +1,7 @@
 //! Deterministic local fixed-limit betting-tree expansion.
 
 use bp52_chain_types::{
-    Action, BettingState, BettingTransition, ChainError, ChainGameDescriptor, Role, Street,
+    Action, BettingState, BettingTransition, ChainError, PokerRules, Role, Street,
 };
 
 /// Exact local-node counts for one descriptor-dependent betting subtree.
@@ -88,9 +88,10 @@ impl BettingTree {
 /// Rejects a non-preflop or malformed state and propagates checked transition
 /// failures.
 pub fn expand_preflop(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     state: BettingState,
 ) -> Result<BettingTree, ChainError> {
+    let descriptor = &descriptor.into();
     if state.street != Street::Preflop {
         return Err(ChainError::InvalidBettingState {
             reason: "preflop expansion requires a preflop state",
@@ -106,9 +107,10 @@ pub fn expand_preflop(
 /// Rejects preflop or malformed state and propagates checked transition
 /// failures.
 pub fn expand_postflop(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     state: BettingState,
 ) -> Result<BettingTree, ChainError> {
+    let descriptor = &descriptor.into();
     if state.street == Street::Preflop {
         return Err(ChainError::InvalidBettingState {
             reason: "postflop expansion cannot use a preflop state",
@@ -118,9 +120,10 @@ pub fn expand_postflop(
 }
 
 fn expand(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     state: BettingState,
 ) -> Result<BettingTree, ChainError> {
+    let descriptor = &descriptor.into();
     let legal = state.legal_actions(descriptor)?;
     let mut actions = Vec::with_capacity(legal.len());
     for action in legal {

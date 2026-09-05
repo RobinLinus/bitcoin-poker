@@ -146,7 +146,9 @@ dependencies = [
  "bp52-lamport",
  "bp52-poker",
  "dlog52-bitcoin",
+ "dlog52-openings",
  "dlog52-protocol",
+ "k256",
  "rand_core",
  "sha2",
  "thiserror 2.0.20",
@@ -173,6 +175,10 @@ dependencies = [
  "bp52-lamport",
  "bp52-poker",
  "bp52-protocol",
+ "dlog52-bitcoin",
+ "dlog52-openings",
+ "dlog52-protocol",
+ "k256",
  "rand_core",
  "sha2",
  "thiserror 2.0.20",
@@ -550,6 +556,7 @@ dependencies = [
  "block-buffer 0.10.4",
  "const-oid",
  "crypto-common 0.1.7",
+ "subtle",
 ]
 
 [[package]]
@@ -560,6 +567,7 @@ dependencies = [
  "dlog52-group",
  "dlog52-protocol",
  "k256",
+ "musig2",
  "sha2",
  "thiserror 2.0.20",
 ]
@@ -582,6 +590,18 @@ dependencies = [
  "rand_core",
  "sha2",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dlog52-openings"
+version = "0.1.0"
+dependencies = [
+ "dlog52-group",
+ "dlog52-protocol",
+ "k256",
+ "rand_core",
+ "thiserror 2.0.20",
+ "zeroize",
 ]
 
 [[package]]
@@ -755,6 +775,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3011d1213f159867b13cfd6ac92d2cd5f1345762c63be3554e84092d85a50bbd"
 
 [[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -811,6 +840,21 @@ dependencies = [
  "keccak",
  "rand_core",
  "zeroize",
+]
+
+[[package]]
+name = "musig2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "355f4af4f1e9b45cada7d482f3e7c5342574ed1f8285e2dea6904bf28884cbd8"
+dependencies = [
+ "base16ct",
+ "hmac",
+ "k256",
+ "once_cell",
+ "secp",
+ "sha2",
+ "subtle",
 ]
 
 [[package]]
@@ -937,6 +981,18 @@ dependencies = [
  "pkcs8",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "secp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3b203895e8f18854c828d1cf7e5710683c3abc28d79330fe5ab723ce5b76e1"
+dependencies = [
+ "base16ct",
+ "k256",
+ "once_cell",
+ "subtle",
 ]
 
 [[package]]

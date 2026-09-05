@@ -3,7 +3,7 @@
 
 mod error;
 
-/// Regtest-only Taproot gates derived from a replay-verified DLOG52 deal.
+/// Dlog card gates and authenticated seven-card showdown witnesses.
 pub mod dlog52;
 /// Exact witness-assisted Tapscript implementation of five-card evaluation.
 pub mod eval5_script;
@@ -37,9 +37,10 @@ pub use signing::{
 };
 pub use taproot::{
     ActionProgram, AliceShowdownProgram, BobPayoutProgram, CompiledTapLeaf, CompiledTaprootState,
-    LeafProgram, MAX_CONSENSUS_SCRIPT_BYTES, MAX_TAPROOT_LEAVES, MAX_WITNESS_ELEMENT_BYTES,
-    RevealProgram, SHOWDOWN_CATEGORIES, TimeoutProgram, assemble_alice_showdown_witness_elements,
-    assemble_bob_payout_witness_elements, assemble_timeout_witness_elements, tapleaf_hash,
+    DlogRevealProgram, LeafProgram, MAX_CONSENSUS_SCRIPT_BYTES, MAX_TAPROOT_LEAVES,
+    MAX_WITNESS_ELEMENT_BYTES, RevealProgram, SHOWDOWN_CATEGORIES, TimeoutProgram,
+    assemble_alice_showdown_witness_elements, assemble_bob_payout_witness_elements,
+    assemble_timeout_witness_elements, tapleaf_hash,
 };
 pub use transactions::{
     TransactionTemplate, custom_signet_network_id, ensure_non_mainnet, network_from_genesis_id,

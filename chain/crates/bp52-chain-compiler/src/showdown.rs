@@ -1,7 +1,7 @@
 //! Checked fold, timeout, and showdown settlement helpers.
 
 use bp52_chain_types::{
-    AmountState, ChainError, ChainGameDescriptor, Role, ShowdownOutcome, TerminalAccounting,
+    AmountState, ChainError, PokerRules, Role, ShowdownOutcome, TerminalAccounting,
     TerminalOutcome, TimeoutKind, TimeoutSpec, terminal_accounting,
 };
 
@@ -19,7 +19,10 @@ pub struct ShowdownBranch {
 /// # Errors
 ///
 /// Rejects a zero descriptor delay.
-pub fn alice_showdown_timeout(descriptor: &ChainGameDescriptor) -> Result<TimeoutSpec, ChainError> {
+pub fn alice_showdown_timeout(
+    descriptor: impl Into<PokerRules>,
+) -> Result<TimeoutSpec, ChainError> {
+    let descriptor = &descriptor.into();
     TimeoutSpec::new(
         TimeoutKind::Showdown,
         descriptor.showdown_csv,
@@ -33,7 +36,8 @@ pub fn alice_showdown_timeout(descriptor: &ChainGameDescriptor) -> Result<Timeou
 /// # Errors
 ///
 /// Rejects a zero descriptor delay.
-pub fn bob_showdown_timeout(descriptor: &ChainGameDescriptor) -> Result<TimeoutSpec, ChainError> {
+pub fn bob_showdown_timeout(descriptor: impl Into<PokerRules>) -> Result<TimeoutSpec, ChainError> {
+    let descriptor = &descriptor.into();
     TimeoutSpec::new(
         TimeoutKind::Showdown,
         descriptor.showdown_csv,
@@ -48,9 +52,10 @@ pub fn bob_showdown_timeout(descriptor: &ChainGameDescriptor) -> Result<TimeoutS
 ///
 /// Propagates checked terminal-accounting failures.
 pub fn showdown_branches(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     amounts: AmountState,
 ) -> Result<[ShowdownBranch; 3], ChainError> {
+    let descriptor = &descriptor.into();
     let make = |outcome| -> Result<ShowdownBranch, ChainError> {
         Ok(ShowdownBranch {
             outcome,
@@ -75,10 +80,11 @@ pub fn showdown_branches(
 ///
 /// Propagates checked terminal-accounting failures.
 pub fn fold_accounting(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     amounts: AmountState,
     folded: Role,
 ) -> Result<TerminalAccounting, ChainError> {
+    let descriptor = &descriptor.into();
     terminal_accounting(
         amounts,
         TerminalOutcome::Fold { folded },
@@ -93,11 +99,12 @@ pub fn fold_accounting(
 ///
 /// Propagates checked terminal-accounting failures.
 pub fn timeout_accounting(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     amounts: AmountState,
     kind: TimeoutKind,
     defaulting: Role,
 ) -> Result<TerminalAccounting, ChainError> {
+    let descriptor = &descriptor.into();
     terminal_accounting(
         amounts,
         TerminalOutcome::Timeout { kind, defaulting },

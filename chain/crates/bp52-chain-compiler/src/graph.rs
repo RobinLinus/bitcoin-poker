@@ -9,10 +9,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use bp52_chain_bitcoin::{FeeClass, FeeError, FeePolicy, RevealPattern};
 use bp52_chain_types::{
     AcceptedDeal, Action, AmountState, AuthorizationPolicy, BettingState, BettingTransition,
-    ChainError, ChainGameDescriptor, EdgeKind, NodeId, NodeKind, Phase, Role, ShowdownOutcome,
-    StateDigest, Street, TerminalAccounting, TerminalOutcome, TimeoutKind, TimeoutSpec,
-    VerifiedChainDescriptor, chain_game_id, child_node_id, logical_state_digest, root_node_id,
-    tagged_sha256, terminal_accounting,
+    ChainError, ChainGameDescriptor, EdgeKind, NodeId, NodeKind, Phase, PokerRules, Role,
+    ShowdownOutcome, StateDigest, Street, TerminalAccounting, TerminalOutcome, TimeoutKind,
+    TimeoutSpec, VerifiedChainDescriptor, chain_game_id, child_node_id, logical_state_digest,
+    root_node_id, tagged_sha256, terminal_accounting,
 };
 use bp52_codec::{CodecError, Encode, Writer};
 use bp52_lamport::{ExpectedLamportEntry, LamportPurpose};
@@ -344,6 +344,22 @@ pub(crate) fn compile_logical_graph_descriptor(
         return Err(CompilerError::CompilerIdMismatch);
     }
 
+    let plan = compile_rules_graph(
+        &PokerRules::from(descriptor),
+        chain_game_id(descriptor)?,
+        fee_policy,
+    )?;
+    verify_plan_against_descriptor(&plan, descriptor, fee_policy)?;
+    Ok(plan)
+}
+
+/// Shared complete poker topology; callers must authenticate the profile ID.
+pub(crate) fn compile_rules_graph(
+    descriptor: &PokerRules,
+    chain_id: [u8; 32],
+    fee_policy: &dyn FeePolicy,
+) -> Result<LogicalGraphPlan, CompilerError> {
+    descriptor.validate()?;
     let fees = FeeSchedule::new(fee_policy)?;
     // The effective-stack graph can be much shorter than the deep-stack
     // 33-transaction deep-stack tree. Graph construction debits every edge of
@@ -351,7 +367,6 @@ pub(crate) fn compile_logical_graph_descriptor(
     // branch exhausts the reserve; requiring the reference bound here would make
     // small all-in profiles needlessly unspendable.
 
-    let chain_id = chain_game_id(descriptor)?;
     let root_id = root_node_id(&chain_id);
     let mut builder = GraphBuilder::new(descriptor, fee_policy, fees, root_id);
     builder.build()?;
@@ -381,7 +396,7 @@ pub(crate) fn compile_logical_graph_descriptor(
         maximum_path_fee_sat,
         maximum_path_length,
     };
-    verify_plan_against_descriptor(&plan, descriptor, fee_policy)?;
+    verify_rules_plan(&plan, descriptor, &LiveFeeSemantics(fee_policy))?;
     Ok(plan)
 }
 
@@ -560,7 +575,7 @@ impl FeeSchedule {
 }
 
 struct GraphBuilder<'a> {
-    descriptor: &'a ChainGameDescriptor,
+    descriptor: &'a PokerRules,
     fee_policy: &'a dyn FeePolicy,
     fees: FeeSchedule,
     root_node_id: NodeId,
@@ -572,7 +587,7 @@ struct GraphBuilder<'a> {
 
 impl<'a> GraphBuilder<'a> {
     fn new(
-        descriptor: &'a ChainGameDescriptor,
+        descriptor: &'a PokerRules,
         fee_policy: &'a dyn FeePolicy,
         fees: FeeSchedule,
         root_node_id: NodeId,
@@ -1248,6 +1263,16 @@ fn verify_plan_against_fee_semantics(
     {
         return Err(profile("logical plan is not bound to the descriptor"));
     }
+    verify_rules_plan(plan, &PokerRules::from(descriptor), fee_policy)
+}
+
+fn verify_rules_plan(
+    plan: &LogicalGraphPlan,
+    descriptor: &PokerRules,
+    fee_policy: &impl FeeSemantics,
+) -> Result<(), CompilerError> {
+    descriptor.validate()?;
+    plan.verify()?;
     let schedule = fee_policy.schedule()?;
     let reference_maximum_path_fee_sat = schedule.maximum_path_fee()?;
     if plan.maximum_path_fee_sat > reference_maximum_path_fee_sat {
@@ -1293,8 +1318,9 @@ fn compiler_id_for_descriptor(descriptor: &ChainGameDescriptor) -> [u8; 32] {
 
 fn verify_betting_action_set(
     node: &PlannedNode,
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
 ) -> Result<(), CompilerError> {
+    let descriptor = &descriptor.into();
     let PlannedState::Betting { state, .. } = node.state else {
         return Ok(());
     };
@@ -1319,8 +1345,9 @@ fn verify_betting_action_set(
 
 fn verify_node_against_descriptor(
     node: &PlannedNode,
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
 ) -> Result<(), CompilerError> {
+    let descriptor = &descriptor.into();
     verify_exact_outgoing_kinds(node)?;
     let expected_timeout = match node.state {
         PlannedState::Reveal { phase, pattern, .. } => {
@@ -1353,9 +1380,10 @@ fn verify_node_against_descriptor(
 }
 
 fn reveal_step_for_phase(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     phase: Phase,
 ) -> Result<RevealStep, CompilerError> {
+    let descriptor = &descriptor.into();
     match phase {
         Phase::DealAlice => Ok(hole_reveal_steps(descriptor)?[0]),
         Phase::DealBob => Ok(hole_reveal_steps(descriptor)?[1]),
@@ -1373,9 +1401,10 @@ fn verify_transition_against_descriptor(
     parent: &PlannedNode,
     edge: &PlannedEdge,
     child: &PlannedNode,
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     fee_policy: &impl FeeSemantics,
 ) -> Result<(), CompilerError> {
+    let descriptor = &descriptor.into();
     if let EdgeKind::Timeout(kind) = edge.kind {
         let timeout = parent
             .timeout
@@ -1429,8 +1458,9 @@ fn verify_reveal_transition(
     amounts: AmountState,
     edge: &PlannedEdge,
     child: &PlannedNode,
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
 ) -> Result<(), CompilerError> {
+    let descriptor = &descriptor.into();
     let after_fee = amounts.charge_fee(edge.fee_sat)?;
     let expected = match phase {
         Phase::DealAlice => {
@@ -1479,9 +1509,10 @@ fn verify_betting_transition(
     action: Action,
     edge: &PlannedEdge,
     child: &PlannedNode,
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     fee_policy: &impl FeeSemantics,
 ) -> Result<(), CompilerError> {
+    let descriptor = &descriptor.into();
     match state
         .apply_action(descriptor, action)?
         .charge_fee(edge.fee_sat)?
@@ -1517,10 +1548,11 @@ fn verify_betting_transition(
 }
 
 fn state_after_completed_street(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     street: Street,
     amounts: AmountState,
 ) -> Result<PlannedState, CompilerError> {
+    let descriptor = &descriptor.into();
     if let Some(next_street) = street.next() {
         let step = community_reveal_steps(descriptor, next_street)?[0];
         Ok(PlannedState::Reveal {
@@ -1541,9 +1573,10 @@ fn verify_terminal_child(
     child: &PlannedNode,
     amounts: AmountState,
     outcome: TerminalOutcome,
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     fee_policy: &impl FeeSemantics,
 ) -> Result<(), CompilerError> {
+    let descriptor = &descriptor.into();
     let accounting = terminal_accounting(
         amounts,
         outcome,
@@ -1619,9 +1652,10 @@ fn verify_non_dust(value: u64, dust_threshold: u64) -> Result<(), CompilerError>
 }
 
 fn exact_maximum_path_fee(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     nodes: &[PlannedNode],
 ) -> Result<u64, CompilerError> {
+    let descriptor = &descriptor.into();
     nodes
         .iter()
         .filter_map(|node| match node.state {

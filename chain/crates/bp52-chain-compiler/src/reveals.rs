@@ -1,9 +1,7 @@
 //! Canonical hole-card and community reveal obligations.
 
 use bp52_chain_bitcoin::RevealPattern;
-use bp52_chain_types::{
-    ChainError, ChainGameDescriptor, Phase, Role, Street, TimeoutKind, TimeoutSpec,
-};
+use bp52_chain_types::{ChainError, Phase, PokerRules, Role, Street, TimeoutKind, TimeoutSpec};
 
 /// One reveal obligation in the exact protocol order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,10 +21,11 @@ impl RevealStep {
     ///
     /// Rejects a zero reveal timeout through [`TimeoutSpec::new`].
     pub fn new(
-        descriptor: &ChainGameDescriptor,
+        descriptor: impl Into<PokerRules>,
         phase: Phase,
         pattern: RevealPattern,
     ) -> Result<Self, ChainError> {
+        let descriptor = &descriptor.into();
         let revealer = pattern.revealer();
         Ok(Self {
             phase,
@@ -49,7 +48,8 @@ impl RevealStep {
 /// # Errors
 ///
 /// Rejects an invalid descriptor reveal timeout.
-pub fn hole_reveal_steps(descriptor: &ChainGameDescriptor) -> Result<[RevealStep; 2], ChainError> {
+pub fn hole_reveal_steps(descriptor: impl Into<PokerRules>) -> Result<[RevealStep; 2], ChainError> {
+    let descriptor = &descriptor.into();
     Ok([
         RevealStep::new(descriptor, Phase::DealAlice, RevealPattern::DealAlice)?,
         RevealStep::new(descriptor, Phase::DealBob, RevealPattern::DealBob)?,
@@ -63,9 +63,10 @@ pub fn hole_reveal_steps(descriptor: &ChainGameDescriptor) -> Result<[RevealStep
 /// Rejects preflop (which has no community cards), a missing reveal order, or
 /// an invalid descriptor reveal timeout.
 pub fn community_reveal_steps(
-    descriptor: &ChainGameDescriptor,
+    descriptor: impl Into<PokerRules>,
     street: Street,
 ) -> Result<[RevealStep; 2], ChainError> {
+    let descriptor = &descriptor.into();
     let first =
         descriptor
             .reveal_order

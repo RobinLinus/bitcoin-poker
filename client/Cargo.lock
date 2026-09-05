@@ -328,6 +328,8 @@ dependencies = [
  "bp52-lamport",
  "bp52-poker",
  "bp52-protocol",
+ "dlog52-bitcoin",
+ "dlog52-protocol",
  "sha2",
  "thiserror 2.0.20",
  "zeroize",
@@ -781,6 +783,7 @@ dependencies = [
  "dlog52-group",
  "dlog52-protocol",
  "k256",
+ "musig2",
  "sha2",
  "thiserror 2.0.20",
 ]
@@ -1276,6 +1279,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "musig2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "355f4af4f1e9b45cada7d482f3e7c5342574ed1f8285e2dea6904bf28884cbd8"
+dependencies = [
+ "base16ct",
+ "hmac",
+ "k256",
+ "once_cell",
+ "secp",
+ "sha2",
+ "subtle",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1453,6 +1471,18 @@ dependencies = [
  "pkcs8",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "secp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3b203895e8f18854c828d1cf7e5710683c3abc28d79330fe5ab723ce5b76e1"
+dependencies = [
+ "base16ct",
+ "k256",
+ "once_cell",
+ "subtle",
 ]
 
 [[package]]

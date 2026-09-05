@@ -22,6 +22,8 @@ thiserror.workspace = true
 [dev-dependencies]
 bp52-core-test-support = { path = "../bp52-core-test-support" }
 rand_core.workspace = true
+k256 = { version = "=0.13.4", default-features = false, features = ["schnorr", "std"] }
+dlog52-openings = { path = "../../../dealing-dlog/crates/dlog52-openings" }
 
 [lints]
 workspace = true

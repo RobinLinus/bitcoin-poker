@@ -9,8 +9,11 @@ pub mod descriptor;
 pub mod node;
 /// Terminal outcomes and checked settlement accounting.
 pub mod outcome;
+/// Deal-independent finite-poker rules.
+pub mod rules;
 /// Fixed-limit betting and amount state.
 pub mod state;
+pub use rules::PokerRules;
 
 use bp52_codec::CodecError;
 
