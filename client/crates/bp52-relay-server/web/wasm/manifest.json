@@ -27,8 +27,8 @@
     {
       "name": "game",
       "url": "/wasm/game.wasm",
-      "sha256": "9929428d220ff169dd98499d600dcbcf9ea388a0a584090f6ed2469df7013403",
-      "sizeBytes": 1603748,
+      "sha256": "515ca59dedaa990a8d2f0c367614ddcdb2a590f07efd8a9f2ac156088bee0cc8",
+      "sizeBytes": 1603979,
       "securityBoundary": "public-game-reducer"
     },
     {
@@ -41,8 +41,8 @@
     {
       "name": "chain",
       "url": "/wasm/chain.wasm",
-      "sha256": "1352306d65f21469fbb6ea689438f29e79226a2771ebf89c0845e8fc5699a8e4",
-      "sizeBytes": 2807964,
+      "sha256": "280c2a200afa75fe93698c095a4ad99b9f5a42d343d39c4cf2cea7302dcef707",
+      "sizeBytes": 2810930,
       "securityBoundary": "chain-secret-worker"
     },
     {

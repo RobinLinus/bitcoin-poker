@@ -1257,7 +1257,7 @@ function parseInviteHash(hash) {
 }
 
 function inviteLink(gameId, inviteSecret) {
-  return `${location.origin}${location.pathname}#/join/${gameId}/${inviteSecret}`;
+  return `${location.origin}${location.pathname}${location.search}#/join/${gameId}/${inviteSecret}`;
 }
 
 async function createGame(pendingRequest = null) {

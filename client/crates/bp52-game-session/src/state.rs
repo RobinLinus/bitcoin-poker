@@ -1410,17 +1410,30 @@ impl<'policy> GameSession<'policy> {
                             "confirmed child spends wrong state/input",
                         ));
                     }
-                    let authorization = self.pending_runtime_receipt.as_ref().ok_or(
-                        SessionError::UnexpectedEvent("confirmed child was not authorized"),
-                    )?;
-                    if authorization.transaction() != fact.spending_transaction
-                        || authorization.child_txid() != fact.spending_txid
-                    {
-                        return Err(SessionError::UnexpectedEvent(
-                            "confirmed child differs from runtime authorization",
-                        ));
+                    let advertised = active
+                        .edges()
+                        .iter()
+                        .find(|edge| edge.edge.transaction.txid == fact.spending_txid)
+                        .ok_or(SessionError::UnexpectedEvent(
+                            "confirmed child is not advertised by the active state",
+                        ))?;
+                    if let Some(authorization) = self.pending_runtime_receipt.as_ref() {
+                        if authorization.transaction() != fact.spending_transaction
+                            || authorization.child_txid() != fact.spending_txid
+                            || authorization.child_node_id() != advertised.edge.child_node_id
+                        {
+                            return Err(SessionError::UnexpectedEvent(
+                                "confirmed child differs from runtime authorization",
+                            ));
+                        }
                     }
-                    authorization.child_node_id()
+                    // Only the publishing browser has a local pre-broadcast
+                    // runtime receipt. Its peer learns the witness-bearing
+                    // transaction from the authenticated chain. Stage an
+                    // advertised txid here; the local CHAIN Worker validates
+                    // the complete witness and must return a signed confirmed-
+                    // state receipt before the reducer advances this state.
+                    advertised.edge.child_node_id
                 }
                 _ => return Err(SessionError::UnexpectedEvent("confirmed spend")),
             };

@@ -126,6 +126,7 @@ impl RelayServer {
     pub fn router(&self) -> Router {
         Router::new()
             .route("/", get(index_page))
+            .route("/bootstrap.js", get(bootstrap_script))
             .route("/styles.css", get(style_sheet))
             .route("/wasm/manifest.json", get(wasm_manifest))
             .route("/wasm/wallet.wasm", get(wallet_wasm))
@@ -698,6 +699,16 @@ async fn index_page() -> impl IntoResponse {
             HeaderValue::from_static("text/html; charset=utf-8"),
         )],
         include_str!("../web/index.html"),
+    )
+}
+
+async fn bootstrap_script() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/javascript; charset=utf-8"),
+        )],
+        include_str!("../web/bootstrap.js"),
     )
 }
 

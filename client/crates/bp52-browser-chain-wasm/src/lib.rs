@@ -522,8 +522,18 @@ impl ChainEngine {
                 let bundle = LamportPublicBundle::decode(&artifact)
                     .map_err(|error| format!("invalid Lamport public bundle: {error}"))?;
                 require_event_sender(sender, from_lamport_role(bundle.role()))?;
-                let status = match self.lamport_bundle(sender) {
-                    Some(existing) if existing == &bundle => SetupEventStatus::Duplicate,
+                // After graph-root agreement CHAIN deliberately drops its own
+                // public bundle and keeps only enough secret state to
+                // regenerate it. A durable relay replay must therefore compare
+                // a local bundle against that deterministic regeneration before
+                // applying the current-phase guard in `accept_lamport_bundle`.
+                let existing = if sender == self.local_role {
+                    Some(self.local_lamport_bundle_owned()?)
+                } else {
+                    self.lamport_bundle(sender).cloned()
+                };
+                let status = match existing {
+                    Some(existing) if existing == bundle => SetupEventStatus::Duplicate,
                     Some(_) => return self.halt("conflicting Lamport bundle"),
                     None => {
                         self.accept_lamport_bundle(&artifact)?;
@@ -1304,14 +1314,14 @@ impl ChainEngine {
         opening: SignatureBundleOpening,
         externally_verified: bool,
     ) -> Result<Vec<u8>, String> {
-        if self.phase != Phase::RootAgreed || self.preauth_commitments.iter().any(Option::is_none) {
-            return Err("preauthorization opening requires both commitments".to_owned());
-        }
         let role = opening.bundle().role();
         let index = role_index(role);
-        let commitment = self.preauth_commitments[index]
-            .ok_or_else(|| "preauthorization opening arrived before its commitment".to_owned())?;
         if let Some(receipt) = self.preauth_receipts[index] {
+            // A restored checkpoint intentionally keeps only the authenticated
+            // receipt (plus the peer opening needed at runtime) after setup.
+            // Compare durable relay replays against that receipt before the
+            // setup-phase guard so exact historical duplicates remain
+            // idempotent without resurrecting discarded setup state.
             let digest =
                 signature_bundle_opening_digest(&opening).map_err(|error| error.to_string())?;
             if digest != receipt.opening_digest() {
@@ -1319,6 +1329,11 @@ impl ChainEngine {
             }
             return receipt.encode_to_vec().map_err(|error| error.to_string());
         }
+        if self.phase != Phase::RootAgreed || self.preauth_commitments.iter().any(Option::is_none) {
+            return Err("preauthorization opening requires both commitments".to_owned());
+        }
+        let commitment = self.preauth_commitments[index]
+            .ok_or_else(|| "preauthorization opening arrived before its commitment".to_owned())?;
         let verified = self.verified_descriptor_value()?;
         let graph_root = self.graph_summary_ref()?.manifest().graph_root;
         let requests = self

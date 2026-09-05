@@ -10,7 +10,7 @@
     />
     <title>BP52 — Bitcoin Poker</title>
     <link rel="stylesheet" href="/styles.css" />
-    <script type="module" src="/dlog52-game.js"></script>
+    <script type="module" src="/bootstrap.js"></script>
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
@@ -54,13 +54,16 @@
             </div>
             <div class="terms-preview">
               <div><span>Game</span><strong>Fixed-limit hold’em</strong></div>
-              <div><span>Stakes</span><strong>Practice chips</strong></div>
+              <div id="practice-stakes-row"><span>Stakes</span><strong>Practice chips</strong></div>
+              <div id="funded-network-row" class="hidden"><span>Network</span><strong id="deployment-network">Loading…</strong></div>
+              <div id="funded-payout-row" class="hidden"><span>Payout</span><strong>Direct Bitcoin settlement</strong></div>
             </div>
             <button id="create-game" class="primary-button" type="button">
               Create table
               <span aria-hidden="true">→</span>
             </button>
-            <p class="fine-print">Demo only—no real money is used.</p>
+            <p id="practice-mode-copy" class="fine-print">Demo only—no real money is used.</p>
+            <p id="funded-mode-copy" class="fine-print hidden">Test coins only. Mainnet is disabled.</p>
           </div>
 
           <div id="join-panel" class="entry-panel hidden" role="tabpanel">

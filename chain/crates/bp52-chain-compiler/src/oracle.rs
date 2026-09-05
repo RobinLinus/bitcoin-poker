@@ -1259,35 +1259,100 @@ fn verify_runtime_summary(
     let (preauthorization_counts, runtime_signature_counts) = logical_signature_counts(plan)?;
     let expected_root_outpoint =
         OutPoint::new(Txid::from_byte_array(activation_template.txid()), 0);
-    if summary.descriptor != prepared.descriptor
-        || summary.network != prepared.network
-        || summary.origin_outpoint != prepared.origin_outpoint
-        || summary.origin_output != prepared.origin_output
-        || summary.activation_template != *activation_template
-        || summary.root_state_outpoint != expected_root_outpoint
-        || summary.root_state_output != prepared.root_state_output
-        || summary.root_node_id != plan.root_node_id
-        || summary.manifest.chain_game_id != plan.chain_game_id
-        || summary.manifest.alice_lamport_bundle_root
-            != prepared.public_material.alice().bundle_root()
-        || summary.manifest.bob_lamport_bundle_root != prepared.public_material.bob().bundle_root()
-        || summary.manifest.compiler_id != prepared.descriptor.compiler_id
-        || summary.manifest.fee_policy_id != prepared.descriptor.fee_policy_id
-        || summary.manifest.node_count != usize_to_u32(plan.nodes.len())?
-        || summary.manifest.transaction_count != usize_to_u32(plan.transaction_count())?
-        || summary.manifest.maximum_path_length != plan.maximum_path_length
-        || summary.preauthorization_counts != preauthorization_counts
-        || summary.runtime_signature_counts != runtime_signature_counts
-        || summary.lamport_counts
-            != [
+    macro_rules! require_summary_match {
+        ($condition:expr, $field:literal) => {
+            if !$condition {
+                return Err(mismatch(concat!(
+                    "runtime page inputs differ from the audited graph summary: ",
+                    $field,
+                )));
+            }
+        };
+    }
+    require_summary_match!(summary.descriptor == prepared.descriptor, "descriptor");
+    require_summary_match!(summary.network == prepared.network, "network");
+    require_summary_match!(
+        summary.origin_outpoint == prepared.origin_outpoint,
+        "origin outpoint"
+    );
+    require_summary_match!(
+        summary.origin_output == prepared.origin_output,
+        "origin output"
+    );
+    require_summary_match!(
+        summary.activation_template == *activation_template,
+        "activation template"
+    );
+    require_summary_match!(
+        summary.root_state_outpoint == expected_root_outpoint,
+        "root outpoint"
+    );
+    require_summary_match!(
+        summary.root_state_output == prepared.root_state_output,
+        "root output"
+    );
+    require_summary_match!(summary.root_node_id == plan.root_node_id, "root node");
+    require_summary_match!(
+        summary.manifest.chain_game_id == plan.chain_game_id,
+        "chain game id"
+    );
+    require_summary_match!(
+        summary.manifest.alice_lamport_bundle_root
+            == prepared.public_material.alice().bundle_root(),
+        "Alice Lamport root"
+    );
+    require_summary_match!(
+        summary.manifest.bob_lamport_bundle_root == prepared.public_material.bob().bundle_root(),
+        "Bob Lamport root"
+    );
+    require_summary_match!(
+        summary.manifest.compiler_id == prepared.descriptor.compiler_id,
+        "compiler id"
+    );
+    require_summary_match!(
+        summary.manifest.fee_policy_id == prepared.descriptor.fee_policy_id,
+        "fee policy id"
+    );
+    require_summary_match!(
+        summary.manifest.node_count == usize_to_u32(plan.nodes.len())?,
+        "node count"
+    );
+    require_summary_match!(
+        summary.manifest.transaction_count == usize_to_u32(plan.transaction_count())?,
+        "transaction count"
+    );
+    require_summary_match!(
+        summary.manifest.maximum_path_length == plan.maximum_path_length,
+        "maximum path length"
+    );
+    require_summary_match!(
+        summary.preauthorization_counts[0] >= preauthorization_counts[0],
+        "Alice preauthorization count is lower"
+    );
+    require_summary_match!(
+        summary.preauthorization_counts[0] <= preauthorization_counts[0],
+        "Alice preauthorization count is higher"
+    );
+    require_summary_match!(
+        summary.preauthorization_counts[1] >= preauthorization_counts[1],
+        "Bob preauthorization count is lower"
+    );
+    require_summary_match!(
+        summary.preauthorization_counts[1] <= preauthorization_counts[1],
+        "Bob preauthorization count is higher"
+    );
+    require_summary_match!(
+        summary.runtime_signature_counts == runtime_signature_counts,
+        "runtime signature counts"
+    );
+    require_summary_match!(
+        summary.lamport_counts
+            == [
                 usize_to_u32(plan.expected_alice_lamport.len())?,
                 usize_to_u32(plan.expected_bob_lamport.len())?,
-            ]
-    {
-        return Err(mismatch(
-            "runtime page inputs differ from the audited graph summary",
-        ));
-    }
+            ],
+        "Lamport counts"
+    );
     Ok(())
 }
 
@@ -1297,24 +1362,16 @@ fn logical_signature_counts(
     let mut preauthorizations = [0_u32; 2];
     let mut runtime = [0_u32; 2];
     for edge in plan.nodes.iter().flat_map(|node| &node.edges) {
-        let multiplicity = if matches!(
-            edge.kind,
-            bp52_chain_types::EdgeKind::AliceShowdown | bp52_chain_types::EdgeKind::BobPayout(_)
-        ) {
-            9
-        } else {
-            1
-        };
         for role in preauthorized_roles(edge.authorization) {
             let index = role_index(role);
             preauthorizations[index] = preauthorizations[index]
-                .checked_add(multiplicity)
+                .checked_add(1)
                 .ok_or_else(|| mismatch("logical preauthorization count overflow"))?;
         }
         if let Some((role, _)) = runtime_signature_role_and_kind(edge.authorization) {
             let index = role_index(role);
             runtime[index] = runtime[index]
-                .checked_add(multiplicity)
+                .checked_add(1)
                 .ok_or_else(|| mismatch("logical runtime-signature count overflow"))?;
         }
     }
@@ -1337,17 +1394,8 @@ fn logical_preauthorization_rank(
             }
             match (parent.node_id, edge.child_node_id).cmp(&target_key) {
                 Ordering::Less => {
-                    let multiplicity = if matches!(
-                        edge.kind,
-                        bp52_chain_types::EdgeKind::AliceShowdown
-                            | bp52_chain_types::EdgeKind::BobPayout(_)
-                    ) {
-                        9
-                    } else {
-                        1
-                    };
                     rank = rank
-                        .checked_add(multiplicity)
+                        .checked_add(1)
                         .ok_or_else(|| mismatch("logical preauthorization rank overflow"))?;
                 }
                 Ordering::Equal => {
