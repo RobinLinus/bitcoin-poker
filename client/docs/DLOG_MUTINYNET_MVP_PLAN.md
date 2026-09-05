@@ -22,11 +22,11 @@ The MVP can omit production hardening. It cannot omit the mechanism it is intend
 | Dlog dealing | Authenticated setup, collision retries, public certificate verification, selective openings, and candidate card keys exist. | Keep this protocol; do not return to legacy proofs. |
 | Dlog table | The default page supports remote practice play, betting, showdown, and rematches. | Reuse its presentation and interaction work. |
 | Dlog Bitcoin bridge | Nine independent regtest card gates exist; they are not the poker settlement graph. | Prove the card-to-settlement integration, then implement it. |
-| Existing chain workspace | Contains the finite betting graph, compiler, runtime, poker evaluator, score handoff, authorization machinery, and timeout concepts. Its accepted-deal and reveal interfaces are tied to legacy dealing. | Port/adapt reusable machinery to a dlog-specific profile. Do not rebuild unrelated components. |
-| Funded browser | The funded route selects the legacy application, with wallet/origin/Esplora and recovery infrastructure. | Connect reusable funding and chain capabilities to dlog. |
+| Existing chain workspace | Contains the finite betting graph, compiler, runtime, poker evaluator, score handoff, authorization machinery, and timeout concepts. The dlog graph and preparation now replace the legacy accepted-deal interfaces. | Port/adapt reusable machinery to a dlog-specific profile. Do not rebuild unrelated components. |
+| Funded browser | The legacy funded application has been removed; reusable wallet/origin/Esplora infrastructure remains. | Connect reusable funding and chain capabilities to dlog. |
 | Dlog recovery | Only the move ratchet is persisted; full deal/session restoration is incomplete. | Persist the secrets, transcript, graph authorization, and selected path needed to resume and settle. |
 
-Evidence: [entry-point selection](../crates/bp52-relay-server/web/bootstrap.js), [dlog table](../crates/bp52-relay-server/web/dlog52-game.js), [card-gate bridge](../../chain/crates/bp52-chain-bitcoin/src/dlog52.rs), [legacy graph descriptor](../../chain/crates/bp52-chain-types/src/descriptor.rs), [recent funded handoff](LIVE_RELEASE_STATE.md).
+Evidence: [entry-point selection](../crates/bp52-relay-server/web/bootstrap.js), [dlog table](../crates/bp52-relay-server/web/dlog52-game.js), [card-gate bridge](../../chain/crates/bp52-chain-bitcoin/src/dlog52.rs), [shared graph types](../../chain/crates/bp52-chain-types/src/descriptor.rs).
 
 During planning, the dlog workspace's 13 tests and the move-ratchet's seven tests passed. The published dlog Wasm completed a same-process scripted two-party harness in 1.93 seconds, attempt 0, with a 102,070-byte certificate. This does not measure networked gameplay or graph preparation. The existing card-gate test checks a signature and Taproot commitment separately, but does not execute the assembled witness in Core and unconditionally chooses the raw-sum-zero leaf.
 
@@ -79,7 +79,7 @@ Done when deterministic graph checks cover every reachable node/edge class and C
 
 **3. Connect the funded dlog browser path**
 
-- Route the public application exclusively through dlog. Remove the legacy funded entry point from the MVP UI. Shared utility dependencies can remain; optimizing or deleting the legacy proof workspace is out of scope.
+- Route the public application exclusively through dlog. Remove the legacy funded entry point from the MVP UI. Shared utility dependencies can remain; the legacy proof workspace has now been deleted.
 - Adapt wallet, staging deposits, origin/refund construction, and Esplora observation to the dlog descriptor and canonical participant ordering.
 - Automate deal acceptance, graph preparation, signature exchange, and readiness. Do not expose playable funded actions before the required recovery artifacts are available and durable.
 - When a player chooses an action, have the chain runtime construct and validate the actual authorized child transaction and predicate witness, persist it, and broadcast it. Confirmed chain observations determine when the next action becomes available.
@@ -131,7 +131,7 @@ The official [MutinyNet faucet](https://faucet.mutinynet.com/) publishes the con
 
 The critical path is: prove the dlog card/reveal/settlement construction → implement the full graph and on-chain authorization policy → integrate the confirmation-driven browser → play complete on-chain hands on MutinyNet, including settlement and timeout paths.
 
-Session recovery and UI polish can proceed alongside the protocol/graph work. Preserve existing uncommitted fixes in shared compiler/runtime/browser components; assess them for reuse rather than discarding them or completing the legacy release as a prerequisite.
+Session recovery and UI polish can proceed alongside the protocol/graph work. The removed legacy working-tree changes were backed up outside the repository.
 
 Release requires a real funded dlog hand whose played graph transitions confirm on-chain, usable unilateral exits, correct payouts, durable recovery, and a credible repeat-play experience. A standalone gate demonstration, scripted local showdown, or cooperative cashout does not pass.
 

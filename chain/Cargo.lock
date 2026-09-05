@@ -125,22 +125,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "bp52-bitcoin"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "bitcoin_hashes",
- "bp52-protocol",
- "sha2",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "bp52-chain-bitcoin"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "bp52-bitcoin",
  "bp52-chain-types",
  "bp52-core-test-support",
  "bp52-lamport",
@@ -151,16 +139,7 @@ dependencies = [
  "k256",
  "rand_core",
  "sha2",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "bp52-chain-cli"
-version = "0.1.0"
-dependencies = [
- "bp52-chain-compiler",
- "bp52-chain-types",
- "bp52-poker",
+ "thiserror",
 ]
 
 [[package]]
@@ -174,30 +153,13 @@ dependencies = [
  "bp52-core-test-support",
  "bp52-lamport",
  "bp52-poker",
- "bp52-protocol",
  "dlog52-bitcoin",
  "dlog52-openings",
  "dlog52-protocol",
  "k256",
  "rand_core",
  "sha2",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "bp52-chain-runtime"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "bp52-chain-bitcoin",
- "bp52-chain-compiler",
- "bp52-chain-types",
- "bp52-lamport",
- "bp52-poker",
- "bp52-protocol",
- "rand_core",
- "thiserror 2.0.20",
+ "thiserror",
  "zeroize",
 ]
 
@@ -207,29 +169,15 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "bp52-codec",
- "bp52-protocol",
  "sha2",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "bp52-circuit"
-version = "0.1.0"
-dependencies = [
- "bp52-codec",
- "bp52-group",
- "bp52-proof-backend",
- "rayon",
- "sha2",
- "thiserror 2.0.20",
- "zeroize",
+ "thiserror",
 ]
 
 [[package]]
 name = "bp52-codec"
 version = "0.1.0"
 dependencies = [
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -240,116 +188,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "bp52-group"
-version = "0.1.0"
-dependencies = [
- "bp52-codec",
- "curve25519-dalek",
- "rand_core",
- "sha2",
- "subtle",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
 name = "bp52-lamport"
 version = "0.1.0"
 dependencies = [
  "chacha20poly1305",
  "rand_core",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
  "zeroize",
 ]
 
 [[package]]
 name = "bp52-poker"
 version = "0.1.0"
-
-[[package]]
-name = "bp52-proof-backend"
-version = "0.1.0"
-dependencies = [
- "bp52-group",
- "bulletproofs",
- "curve25519-dalek",
- "merlin",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "bp52-protocol"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "bp52-circuit",
- "bp52-codec",
- "bp52-group",
- "bp52-sigma",
- "bp52-uniqueness",
- "chacha20poly1305",
- "curve25519-dalek",
- "merlin",
- "rand_core",
- "sha2",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "bp52-sigma"
-version = "0.1.0"
-dependencies = [
- "bp52-codec",
- "bp52-group",
- "curve25519-dalek",
- "merlin",
- "rand_core",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "bp52-uniqueness"
-version = "0.1.0"
-dependencies = [
- "bp52-codec",
- "bp52-group",
- "bp52-sigma",
- "curve25519-dalek",
- "merlin",
- "rand_core",
- "sha2",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "bulletproofs"
-version = "5.0.1"
-dependencies = [
- "byteorder",
- "clear_on_drop",
- "curve25519-dalek",
- "digest",
- "group",
- "merlin",
- "rand",
- "rand_core",
- "rayon",
- "serde",
- "serde_derive",
- "sha3",
- "subtle",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "byteorder"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cc"
@@ -404,15 +255,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clear_on_drop"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38508a63f4979f0048febc9966fadbd48e5dab31fd0ec6a3f151bbf4a74f7423"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -441,31 +283,6 @@ checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "crossbeam-deque"
-version = "0.8.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5181e0de7b61eb03a81e347d6dd8797bae9da5146707b51077e2d71a54ec0ceb"
-dependencies = [
- "crossbeam-epoch",
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-epoch"
-version = "0.9.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-utils"
-version = "0.8.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
 
 [[package]]
 name = "crypto-bigint"
@@ -508,36 +325,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "curve25519-dalek"
-version = "4.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "curve25519-dalek-derive",
- "digest",
- "fiat-crypto",
- "group",
- "rand_core",
- "rustc_version",
- "serde",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "curve25519-dalek-derive"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -569,14 +356,14 @@ dependencies = [
  "k256",
  "musig2",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
 name = "dlog52-codec"
 version = "0.1.0"
 dependencies = [
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -589,7 +376,7 @@ dependencies = [
  "once_cell",
  "rand_core",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -600,7 +387,7 @@ dependencies = [
  "dlog52-protocol",
  "k256",
  "rand_core",
- "thiserror 2.0.20",
+ "thiserror",
  "zeroize",
 ]
 
@@ -614,7 +401,7 @@ dependencies = [
  "k256",
  "rand_core",
  "subtle",
- "thiserror 2.0.20",
+ "thiserror",
  "zeroize",
 ]
 
@@ -630,7 +417,7 @@ dependencies = [
  "k256",
  "rand_chacha",
  "rand_core",
- "thiserror 2.0.20",
+ "thiserror",
  "zeroize",
 ]
 
@@ -641,7 +428,7 @@ dependencies = [
  "dlog52-codec",
  "k256",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -653,7 +440,7 @@ dependencies = [
  "dlog52-transcript",
  "k256",
  "rand_core",
- "thiserror 2.0.20",
+ "thiserror",
  "zeroize",
 ]
 
@@ -669,12 +456,6 @@ dependencies = [
  "signature",
  "spki",
 ]
-
-[[package]]
-name = "either"
-version = "1.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
 name = "elliptic-curve"
@@ -704,12 +485,6 @@ dependencies = [
  "rand_core",
  "subtle",
 ]
-
-[[package]]
-name = "fiat-crypto"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "find-msvc-tools"
@@ -816,31 +591,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "keccak"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
-dependencies = [
- "cpufeatures 0.2.17",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
-
-[[package]]
-name = "merlin"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58c38e2799fc0978b65dfff8023ec7843e2330bb462f19198840b34b6582397d"
-dependencies = [
- "byteorder",
- "keccak",
- "rand_core",
- "zeroize",
-]
 
 [[package]]
 name = "musig2"
@@ -941,35 +695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rayon"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb39b166781f92d482534ef4b4b1b2568f42613b53e5b6c160e24cfbfa30926d"
-dependencies = [
- "either",
- "rayon-core",
-]
-
-[[package]]
-name = "rayon-core"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
-dependencies = [
- "crossbeam-deque",
- "crossbeam-utils",
-]
-
-[[package]]
-name = "rustc_version"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
-dependencies = [
- "semver",
-]
-
-[[package]]
 name = "sec1"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1016,12 +741,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "semver"
-version = "1.0.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1060,16 +779,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
-]
-
-[[package]]
-name = "sha3"
-version = "0.10.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
-dependencies = [
- "digest",
- "keccak",
 ]
 
 [[package]]
@@ -1128,31 +837,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
 dependencies = [
- "thiserror-impl 2.0.20",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "thiserror-impl",
 ]
 
 [[package]]

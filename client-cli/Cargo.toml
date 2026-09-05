@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [".", "crates/*"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,17 +8,6 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 authors = ["BP52 contributors"]
-
-[package]
-name = "bp52-client-cli"
-publish = false
-description = "Two-human command-line Bitcoin Poker client"
-default-run = "bp52-client-cli"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
 
 [workspace.dependencies]
 base64 = "=0.23.1"
@@ -29,11 +18,8 @@ rand = "=0.8.5"
 bitcoin = { version = "=0.32.102", default-features = false, features = ["std", "rand-std", "secp-recovery"] }
 bp52-chain-bitcoin = { path = "../chain/crates/bp52-chain-bitcoin" }
 bp52-chain-compiler = { path = "../chain/crates/bp52-chain-compiler" }
-bp52-chain-runtime = { path = "../chain/crates/bp52-chain-runtime" }
 bp52-chain-types = { path = "../chain/crates/bp52-chain-types" }
-bp52-protocol = { path = "../dealing/crates/bp52-protocol" }
 bp52-client-ports = { path = "../client/crates/bp52-client-ports" }
-bp52-game-session = { path = "../client/crates/bp52-game-session" }
 bp52-origin = { path = "../client/crates/bp52-origin" }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -42,35 +28,6 @@ sha2 = "=0.10.9"
 thiserror = "=2.0.20"
 tokio = { version = "=1.53.1", features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 ureq = { version = "=3.4.0", default-features = false, features = ["rustls"] }
-
-[dependencies]
-bitcoin.workspace = true
-bp52-circuit = { path = "../dealing/crates/bp52-circuit" }
-bp52-chain-compiler.workspace = true
-bp52-chain-types.workspace = true
-bp52-codec = { path = "../dealing/crates/bp52-codec" }
-bp52-group = { path = "../dealing/crates/bp52-group" }
-bp52-origin.workspace = true
-bp52-native-chain = { path = "crates/bp52-native-chain" }
-bp52-protocol.workspace = true
-bp52-sigma = { path = "../dealing/crates/bp52-sigma" }
-bp52-uniqueness = { path = "../dealing/crates/bp52-uniqueness" }
-bp52-adapter-esplora = { path = "crates/bp52-adapter-esplora" }
-bp52-client-core = { path = "crates/bp52-client-core" }
-bp52-client-ports.workspace = true
-bp52-store-sqlite = { path = "crates/bp52-store-sqlite" }
-bp52-transport-libp2p = { path = "crates/bp52-transport-libp2p" }
-futures.workspace = true
-libp2p.workspace = true
-rand.workspace = true
-rand_core = "=0.6.4"
-serde_json.workspace = true
-tokio.workspace = true
-ureq.workspace = true
-zeroize = { version = "=1.9.0", features = ["derive"] }
-
-[lints]
-workspace = true
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

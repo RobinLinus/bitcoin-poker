@@ -3,7 +3,7 @@
 
 /// Canonical codecs and deterministic identifier derivation.
 pub mod codec;
-/// Signed chain-game descriptors and their validation.
+/// Poker roles and reveal-order definitions.
 pub mod descriptor;
 /// Logical transaction-tree nodes and edges.
 pub mod node;
@@ -18,15 +18,10 @@ pub use rules::PokerRules;
 use bp52_codec::CodecError;
 
 pub use codec::{
-    CHAIN_DESCRIPTOR_TAG, CHAIN_GAME_TAG, CHAIN_NODE_TAG, CHAIN_ROOT_TAG, chain_game_id,
-    child_node_id, child_node_id_from_code, decode_chain_descriptor, descriptor_signature_digest,
-    logical_state_digest, root_node_id, tagged_sha256,
+    CHAIN_NODE_TAG, CHAIN_ROOT_TAG, child_node_id, child_node_id_from_code, logical_state_digest,
+    root_node_id, tagged_sha256,
 };
-pub use descriptor::{
-    AcceptedDeal, ChainGameDescriptor, RevealOrder, Role, SignedChainGameDescriptor,
-    TimeoutSettlementPolicy, VerifiedChainDescriptor, validate_chain_descriptor,
-    verify_signed_chain_descriptor,
-};
+pub use descriptor::{RevealOrder, Role, TimeoutSettlementPolicy};
 pub use node::{
     AuthorizationPolicy, EdgeKind, LogicalEdge, LogicalNodeRecord, LogicalOutput,
     LogicalTransaction, NodeId, NodeKind, Phase, PredicateId, StateDigest,
@@ -57,64 +52,6 @@ pub enum ChainError {
     /// Canonical encoding or decoding failed.
     #[error(transparent)]
     Codec(#[from] CodecError),
-    /// The chain descriptor selected an unsupported protocol version.
-    #[error("unsupported chain protocol version {actual}")]
-    WrongChainProtocolVersion {
-        /// Version found in the descriptor.
-        actual: u16,
-    },
-    /// The embedded deal selected an unsupported protocol version.
-    #[error("unsupported deal protocol version {actual}")]
-    WrongDealProtocolVersion {
-        /// Version found in the accepted deal.
-        actual: u16,
-    },
-    /// One serialized BIP340 identity key was invalid.
-    #[error("invalid {role:?} x-only identity key")]
-    InvalidIdentityKey {
-        /// Role whose key failed parsing.
-        role: Role,
-    },
-    /// Alice and Bob were not the canonical lexicographic identity ordering.
-    #[error("identity keys are not in canonical Alice/Bob order")]
-    NonCanonicalIdentityOrder,
-    /// An accepted-deal or descriptor signature failed verification.
-    #[error("invalid {role:?} {object} signature")]
-    InvalidSignature {
-        /// Role whose signature failed.
-        role: Role,
-        /// Signed object name.
-        object: &'static str,
-    },
-    /// The accepted deal was rebound to a different funding/session context.
-    #[error("accepted-deal game identifier does not match descriptor context")]
-    DealGameIdMismatch,
-    /// The compiler was given an accepted deal other than the descriptor's.
-    #[error("compiler deal does not exactly match descriptor deal")]
-    DealMismatch,
-    /// The concrete fee policy does not match the descriptor commitment.
-    #[error("fee policy identifier does not match descriptor")]
-    FeePolicyMismatch,
-    /// The running compiler profile does not match the descriptor commitment.
-    #[error("compiler identifier does not match descriptor")]
-    CompilerIdMismatch,
-    /// Lamport public material was incomplete, duplicated, or incorrectly bound.
-    #[error("invalid Lamport public material")]
-    LamportMaterialInvalid,
-    /// A concrete Bitcoin transaction or script template failed validation.
-    #[error("invalid Bitcoin transaction template")]
-    BitcoinTemplateInvalid,
-    /// Independent graph-root computation disagreed with the supplied root.
-    #[error("compiled graph root mismatch")]
-    GraphRootMismatch,
-    /// Two accepted-deal hash locks were equal.
-    #[error("duplicate accepted-deal hashes at indices {first} and {second}")]
-    DuplicateDealHash {
-        /// First global Alice-then-Bob hash index.
-        first: usize,
-        /// Second global Alice-then-Bob hash index.
-        second: usize,
-    },
     /// The fixed-limit unit was zero.
     #[error("small-blind unit must be nonzero")]
     ZeroUnit,
@@ -150,12 +87,6 @@ pub enum ChainError {
     UnsupportedTimeoutSettlementPolicy {
         /// Policy rejected by the reference v1 profile.
         actual: TimeoutSettlementPolicy,
-    },
-    /// A required domain identifier was all zero.
-    #[error("{field} must not be the all-zero identifier")]
-    ZeroIdentifier {
-        /// Descriptor field containing the identifier.
-        field: &'static str,
     },
     /// Checked addition or multiplication overflowed.
     #[error("amount arithmetic overflow")]

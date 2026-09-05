@@ -117,15 +117,12 @@ pub fn timeout_accounting(
 mod tests {
     use bp52_chain_bitcoin::{FeePolicy, FixedFeePolicy};
     use bp52_chain_types::{
-        AmountState, ChainError, Role, SettlementReason, ShowdownOutcome, TerminalOutcome,
-        TimeoutKind, TimeoutSettlementPolicy, terminal_accounting,
+        AmountState, Role, SettlementReason, ShowdownOutcome, TerminalOutcome, TimeoutKind,
+        TimeoutSettlementPolicy, terminal_accounting,
     };
 
     use super::{showdown_branches, timeout_accounting};
-    use crate::{
-        CompilerError, graph::compile_logical_graph_descriptor, reference_compiler_id,
-        test_support::descriptor_fixture,
-    };
+    use crate::test_support::descriptor_fixture;
 
     #[test]
     fn branches_are_canonical_and_conserve_value() -> Result<(), Box<dyn std::error::Error>> {
@@ -230,25 +227,6 @@ mod tests {
             );
             assert_eq!(alice_output + bob_output, amounts.game_value()?);
         }
-        Ok(())
-    }
-
-    #[test]
-    fn compiler_rejects_reserved_stack_slashing_policy() -> Result<(), Box<dyn std::error::Error>> {
-        let fee_policy = FixedFeePolicy::new(200, 330)?;
-        let mut descriptor = descriptor_fixture()?;
-        descriptor.fee_policy_id = fee_policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
-        descriptor.timeout_policy = TimeoutSettlementPolicy::SlashRemainingStack;
-
-        assert!(matches!(
-            compile_logical_graph_descriptor(&descriptor, &descriptor.deal, &fee_policy),
-            Err(CompilerError::Chain(
-                ChainError::UnsupportedTimeoutSettlementPolicy {
-                    actual: TimeoutSettlementPolicy::SlashRemainingStack
-                }
-            ))
-        ));
         Ok(())
     }
 }

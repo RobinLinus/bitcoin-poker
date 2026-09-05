@@ -828,3 +828,7 @@ mod tests {
         );
     }
 }
+
+/// Backend-neutral Bitcoin transaction broadcasting.
+pub mod broadcast;
+pub use broadcast::{BroadcastError, Broadcaster};

@@ -1,8 +1,8 @@
 # Dlog on-chain implementation status
 
 Milestone 1 is **not yet complete or deployed**. The native on-chain backbone is
-implemented and tested. The browser still runs its existing practice/funded
-flows; it does not yet call the new dlog graph.
+implemented and tested. The browser runs dlog practice play; it does not yet call the new dlog graph.
+The legacy funded application and hash-based proof stack have been removed.
 
 ## Implemented
 
@@ -107,5 +107,5 @@ regtest qualification values, not a current MutinyNet fee recommendation.
    52 adaptors per reveal can be expensive across the full tree. Measure the
    deployed fee/reserve and run complete MutinyNet hands before publishing.
 
-No independent cryptographic audit is claimed for the adaptor extension. Legacy
-application changes already present in the working tree were preserved.
+No independent cryptographic audit is claimed for the adaptor extension. Uncommitted legacy application changes were backed up outside the repository
+before removal.

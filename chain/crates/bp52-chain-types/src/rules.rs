@@ -1,7 +1,7 @@
 //! Poker economics independent of the accepted-deal cryptography.
 use crate::{
-    ChainError, ChainGameDescriptor, MAX_BETS_PER_STREET, MIN_STARTING_STACK_UNITS, RevealOrder,
-    Role, TimeoutKind, TimeoutSettlementPolicy,
+    ChainError, MAX_BETS_PER_STREET, MIN_STARTING_STACK_UNITS, RevealOrder, Role, TimeoutKind,
+    TimeoutSettlementPolicy,
 };
 
 /// Complete finite-poker rules, independent of either dealing implementation.
@@ -96,24 +96,7 @@ impl PokerRules {
             .ok_or(ChainError::ArithmeticOverflow)
     }
 }
-impl From<&ChainGameDescriptor> for PokerRules {
-    fn from(d: &ChainGameDescriptor) -> Self {
-        Self {
-            button: d.button,
-            unit_sat: d.unit_sat,
-            max_bets_per_street: d.max_bets_per_street,
-            alice_starting_stack_sat: d.alice_starting_stack_sat,
-            bob_starting_stack_sat: d.bob_starting_stack_sat,
-            fee_reserve_sat: d.fee_reserve_sat,
-            action_csv: d.action_csv,
-            reveal_csv: d.reveal_csv,
-            showdown_csv: d.showdown_csv,
-            reveal_order: d.reveal_order,
-            timeout_policy: d.timeout_policy,
-            split_remainder_recipient: d.split_remainder_recipient,
-        }
-    }
-}
+
 impl From<&PokerRules> for PokerRules {
     fn from(rules: &PokerRules) -> Self {
         *rules

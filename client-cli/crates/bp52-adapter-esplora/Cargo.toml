@@ -10,7 +10,6 @@ authors.workspace = true
 
 [dependencies]
 bitcoin.workspace = true
-bp52-chain-runtime.workspace = true
 bp52-client-ports.workspace = true
 serde.workspace = true
 serde_json.workspace = true

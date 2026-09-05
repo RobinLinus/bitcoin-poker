@@ -15,7 +15,6 @@ bp52-chain-types = { path = "../bp52-chain-types" }
 bp52-codec.workspace = true
 bp52-lamport = { path = "../bp52-lamport" }
 bp52-poker = { path = "../bp52-poker" }
-bp52-protocol.workspace = true
 dlog52-protocol.workspace = true
 dlog52-bitcoin.workspace = true
 sha2.workspace = true

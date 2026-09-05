@@ -850,32 +850,11 @@ const fn invalid_state(reason: &'static str) -> ChainError {
 mod tests {
     use std::error::Error;
 
-    use bp52_protocol::PROTOCOL_VERSION as DEAL_PROTOCOL_VERSION;
-
     use super::{Action, AmountState, BettingState, BettingTransition, Street};
-    use crate::{
-        AcceptedDeal, CHAIN_PROTOCOL_VERSION, ChainError, ChainGameDescriptor, RevealOrder, Role,
-        TimeoutSettlementPolicy,
-    };
+    use crate::{ChainError, PokerRules, RevealOrder, Role, TimeoutSettlementPolicy};
 
-    fn descriptor(alice_stack: u64, bob_stack: u64, button: Role) -> ChainGameDescriptor {
-        ChainGameDescriptor {
-            chain_protocol_version: CHAIN_PROTOCOL_VERSION,
-            deal: AcceptedDeal {
-                protocol_version: DEAL_PROTOCOL_VERSION,
-                game_id: [1; 32],
-                attempt: 0,
-                hashes_a: [[2; 32]; 9],
-                hashes_b: [[3; 32]; 9],
-                verification_transcript_root: [4; 32],
-                signature_a: [5; 64],
-                signature_b: [6; 64],
-            },
-            network_id: [7; 32],
-            funding_outpoint: [8; 36],
-            deal_session_nonce: [9; 32],
-            alice_xonly_pk: [10; 32],
-            bob_xonly_pk: [11; 32],
+    fn descriptor(alice_stack: u64, bob_stack: u64, button: Role) -> PokerRules {
+        PokerRules {
             button,
             unit_sat: 100,
             max_bets_per_street: crate::MAX_BETS_PER_STREET,
@@ -892,13 +871,11 @@ mod tests {
             },
             timeout_policy: TimeoutSettlementPolicy::PotOnly,
             split_remainder_recipient: Role::Alice,
-            fee_policy_id: [12; 32],
-            compiler_id: [13; 32],
         }
     }
 
     fn assert_tree_conserves_value(
-        descriptor: &ChainGameDescriptor,
+        descriptor: &PokerRules,
         state: BettingState,
         depth: usize,
     ) -> Result<(), ChainError> {

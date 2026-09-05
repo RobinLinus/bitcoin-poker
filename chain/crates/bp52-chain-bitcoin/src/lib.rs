@@ -25,12 +25,7 @@ pub use eval5_script::{
     eval5_tapscript_for_category,
 };
 pub use fees::{ClassFeePolicy, FeeClass, FeeError, FeePolicy, FixedFeePolicy, MAX_EXECUTED_PATH};
-pub use predicates::{
-    ALICE_SEVEN_SLOTS, BOB_SEVEN_SLOTS, CardOpeningWitness, RevealPattern, ShareRevealPredicate,
-    ShowdownHandWitness, VerifiedShowdownHand, verify_alice_score_certificate,
-    verify_alice_showdown, verify_bob_score_certificate, verify_bob_showdown_outcome,
-    verify_bob_terminal, verify_card_witness, verify_showdown_hand,
-};
+pub use predicates::{ALICE_SEVEN_SLOTS, BOB_SEVEN_SLOTS, RevealPattern};
 pub use signing::{
     DEFAULT_SIGHASH_SIGNATURE_BYTES, DefaultSighashSignature, sign_sighash_default,
     taproot_key_sighash_default, taproot_script_sighash_default, verify_sighash_default,
@@ -38,8 +33,7 @@ pub use signing::{
 pub use taproot::{
     ActionProgram, AliceShowdownProgram, BobPayoutProgram, CompiledTapLeaf, CompiledTaprootState,
     DlogRevealProgram, LeafProgram, MAX_CONSENSUS_SCRIPT_BYTES, MAX_TAPROOT_LEAVES,
-    MAX_WITNESS_ELEMENT_BYTES, RevealProgram, SHOWDOWN_CATEGORIES, TimeoutProgram,
-    assemble_alice_showdown_witness_elements, assemble_bob_payout_witness_elements,
+    MAX_WITNESS_ELEMENT_BYTES, SHOWDOWN_CATEGORIES, TimeoutProgram,
     assemble_timeout_witness_elements, tapleaf_hash,
 };
 pub use transactions::{

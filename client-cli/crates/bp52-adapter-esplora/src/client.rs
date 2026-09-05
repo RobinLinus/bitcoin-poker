@@ -5,12 +5,12 @@ use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::hex::DisplayHex;
 use bitcoin::{Address, BlockHash, Transaction, Txid};
-use bp52_chain_runtime::{BroadcastError, Broadcaster};
 use bp52_client_ports::{
     BlockRef, ChainProfile, ChainReader, MAX_RAW_TRANSACTION_BYTES, OutPointRef, OutpointStatus,
     PortError, RawTransaction, TipObservation, TransactionPublisher, TransactionStatus,
     VerifiedChainIdentity,
 };
+use bp52_client_ports::{BroadcastError, Broadcaster};
 use serde::Deserialize;
 
 use crate::EsploraError;

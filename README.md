@@ -1,50 +1,25 @@
 # Bitcoin Poker
 
-This repository is the home of the Bitcoin Poker project.
+Private poker using dlog dealing and a finite Bitcoin settlement graph.
+The hash-based dealing implementation and its applications have been removed.
 
-For an architectural explanation of how a private poker hand is represented
-and settled with Bitcoin transactions, see the
-[`high-level protocol specification`](HIGH_LEVEL_SPEC.md).
+- [`dealing-dlog/`](dealing-dlog/) implements private dealing, selective openings, and card signatures.
+- [`chain/`](chain/) implements the full poker graph, transaction preparation, on-chain reveals, showdown, and timeout settlement. It also owns the shared binary codec.
+- [`client/`](client/) contains the dlog practice table, relay, and reusable wallet/origin infrastructure.
+- [`client-cli/`](client-cli/) contains reusable native storage, transport, and Esplora libraries; there is currently no playable CLI executable.
 
-The project currently contains four Rust workspaces in one source distribution:
+The native dlog on-chain backbone is implemented. Funded browser integration,
+durable game recovery, and MutinyNet deployment remain unfinished. See the
+[implementation status](client/docs/DLOG_ONCHAIN_IMPLEMENTATION.md) and
+[MVP plan](client/docs/DLOG_MUTINYNET_MVP_PLAN.md).
 
-- [`dealing/`](dealing/) implements the hidden-card dealing protocol.
-- [`chain/`](chain/) implements the finite Bitcoin transaction tree and poker
-  runtime that consumes an accepted deal.
-- [`client/`](client/) implements the web client, its application relay, and
-  shared backend-neutral game, origin, and chain ports.
-- [`client-cli/`](client-cli/) implements the standalone two-human terminal
-  client, native wallet and durable state, and relay-assisted hole punching.
+Run `cargo test --workspace --locked` from each workspace, and
+`node client/scripts/test-browser.mjs` from the repository root.
+Run `chain/scripts/bitcoin-core-regtest.sh --docker --suite dlog --require`
+for isolated Bitcoin Core qualification using a cached Core image.
 
-The workspaces are independently invocable, but `chain/` deliberately uses
-path dependencies from `dealing/`, while both clients use shared protocol
-crates. Copy or archive all four together.
+Keep all four workspaces together: they share path dependencies.
+`scripts/check-source-integrity.sh` verifies the locked dependency graphs;
+`--archive-smoke` checks the committed HEAD archive instead of local edits.
 
-To work on the dealing implementation:
-
-```sh
-cd dealing
-cargo test --workspace --all-targets --locked
-```
-
-Use the same commands from `chain/`, `client/`, and `client-cli/` for those
-implementations.
-
-Before creating a source archive, run:
-
-```sh
-scripts/check-source-integrity.sh --archive-smoke
-```
-
-This verifies that the locally hardened proof backend is present as ordinary
-source files and that all four locked workspaces survive `git archive`.
-
-Both the browser and two-process native CLI coordinate the complete configured research flow: two
-₿27,000 deposits, a jointly authorized origin and abort refund, the private
-deal, streamed transaction-graph preparation, activation, poker actions, and
-terminal payout. Its table uses ₿20,000 stacks with ₿100/₿200 blinds, exactly
-100 big blinds per player. Setup advances automatically once both deposits
-confirm; the visible controls are reserved for actual poker decisions.
-
-This remains research software and is not ready for real funds. Read the
-repository [security policy](SECURITY.md) before integrating it.
+This is experimental test-network software. See [SECURITY.md](SECURITY.md).

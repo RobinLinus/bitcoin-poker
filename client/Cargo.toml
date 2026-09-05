@@ -21,9 +21,7 @@ http = "=1.5.0"
 k256 = { version = "=0.13.4", default-features = false, features = ["arithmetic"] }
 bp52-chain-bitcoin = { path = "../chain/crates/bp52-chain-bitcoin" }
 bp52-chain-compiler = { path = "../chain/crates/bp52-chain-compiler" }
-bp52-chain-runtime = { path = "../chain/crates/bp52-chain-runtime" }
 bp52-chain-types = { path = "../chain/crates/bp52-chain-types" }
-bp52-protocol = { path = "../dealing/crates/bp52-protocol" }
 dlog52-bitcoin = { path = "../dealing-dlog/crates/dlog52-bitcoin" }
 dlog52-protocol = { path = "../dealing-dlog/crates/dlog52-protocol" }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }

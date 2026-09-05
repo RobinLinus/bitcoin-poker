@@ -18,32 +18,11 @@
       "securityBoundary": "origin-transaction-builder"
     },
     {
-      "name": "deal",
-      "url": "/wasm/deal.wasm",
-      "sha256": "0edcaee512e2777f540e04b121727cf1137a0142b9fcca001134d6deacec1f63",
-      "sizeBytes": 1051075,
-      "securityBoundary": "deal-secret-worker"
-    },
-    {
-      "name": "game",
-      "url": "/wasm/game.wasm",
-      "sha256": "91fc4e536b2a2a353e97e0ed72ceb9a45a65d64033cd20f88797b7a792d8ea1b",
-      "sizeBytes": 1613561,
-      "securityBoundary": "public-game-reducer"
-    },
-    {
       "name": "dlog52",
       "url": "/wasm/dlog52.wasm",
       "sha256": "46ea734308e6d5851893db2977947ee330e2ed899f99d39b4e80ec1ec1dede09",
       "sizeBytes": 2062458,
       "securityBoundary": "dlog52-secret-worker"
-    },
-    {
-      "name": "chain",
-      "url": "/wasm/chain.wasm",
-      "sha256": "289815f3448de28f3d4641b70fef97b595eb80fd0604de5a991dc09858056c94",
-      "sizeBytes": 2876872,
-      "securityBoundary": "chain-secret-worker"
     },
     {
       "name": "transaction",

@@ -377,45 +377,10 @@ async fn static_assets_are_same_origin_and_hardened() -> Result<(), Box<dyn std:
         ("/wasm/manifest.json", "application/json; charset=utf-8"),
         ("/wasm/wallet.wasm", "application/wasm"),
         ("/wasm/origin.wasm", "application/wasm"),
-        ("/wasm/deal.wasm", "application/wasm"),
-        ("/wasm/game.wasm", "application/wasm"),
-        ("/wasm/chain.wasm", "application/wasm"),
         ("/wasm/transaction.wasm", "application/wasm"),
         ("/origin-client.js", "text/javascript; charset=utf-8"),
         (
-            "/browser/flow/game-client.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/flow/chain-game-client.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/flow/game-chain-safety.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/deal/deal-worker.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
             "/browser/worker/serial-dispatch.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/game/game-worker.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/chain/chain-runtime.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/chain/chain-worker.js",
-            "text/javascript; charset=utf-8",
-        ),
-        (
-            "/browser/chain/chain-client.js",
             "text/javascript; charset=utf-8",
         ),
         (
@@ -442,7 +407,6 @@ async fn static_assets_are_same_origin_and_hardened() -> Result<(), Box<dyn std:
             "/browser/chain-adapter/transaction-runtime.js",
             "text/javascript; charset=utf-8",
         ),
-        ("/app.js", "text/javascript; charset=utf-8"),
     ] {
         let response = app
             .clone()
@@ -494,6 +458,28 @@ async fn static_assets_are_same_origin_and_hardened() -> Result<(), Box<dyn std:
         config.json["deploymentDigestHex"].as_str().map(str::len),
         Some(64)
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn legacy_application_assets_are_removed() -> Result<(), Box<dyn std::error::Error>> {
+    let temporary = TemporaryDatabase::create()?;
+    let app = open_test_relay(&temporary.path)?.router();
+    for path in [
+        "/app.js",
+        "/wasm/deal.wasm",
+        "/wasm/chain.wasm",
+        "/wasm/game.wasm",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+    let bootstrap = include_str!("../web/bootstrap.js");
+    assert!(bootstrap.contains("/dlog52-game.js"));
+    assert!(!bootstrap.contains("/app.js"));
     Ok(())
 }
 
@@ -614,8 +600,9 @@ fn module_discovery_handles_supported_static_import_forms() {
 async fn every_static_app_module_is_served() -> Result<(), Box<dyn std::error::Error>> {
     let temporary = TemporaryDatabase::create()?;
     let app = open_test_relay(&temporary.path)?.router();
-    let mut pending = VecDeque::from([(String::from("/app.js"), String::from("entry point"))]);
-    let mut discovered = HashSet::from([String::from("/app.js")]);
+    let mut pending =
+        VecDeque::from([(String::from("/dlog52-game.js"), String::from("entry point"))]);
+    let mut discovered = HashSet::from([String::from("/dlog52-game.js")]);
 
     while let Some((path, imported_by)) = pending.pop_front() {
         let response = app
@@ -655,13 +642,6 @@ async fn every_static_app_module_is_served() -> Result<(), Box<dyn std::error::E
         "the app module graph was unexpectedly empty"
     );
     Ok(())
-}
-
-#[test]
-fn application_uses_the_configured_gameplay_confirmation_depth() {
-    let script = include_str!("../web/app.js");
-    assert!(script.contains("minConfirmations: CHAIN_CONFIG.confirmations.gameplay"));
-    assert!(!script.contains("minConfirmations: 1"));
 }
 
 #[tokio::test]

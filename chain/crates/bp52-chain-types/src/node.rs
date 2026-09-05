@@ -174,8 +174,8 @@ pub enum AuthorizationPolicy {
         actor: Role,
     },
     /// Both transaction signatures are pre-exchanged; revealer supplies shares.
-    RevealPreimages {
-        /// Player whose committed preimages authorize the edge.
+    RevealOpenings {
+        /// Player whose dlog openings authorize the edge.
         revealer: Role,
     },
     /// Both signatures are pre-exchanged; Alice supplies hole shares and score OTS.
@@ -433,7 +433,7 @@ fn validate_non_timeout_authorization(
             EdgeKind::HoleCardReveal {
                 revealer: edge_role,
             },
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: authorization_role,
             },
         ) if edge_role == authorization_role => Ok(()),
@@ -442,7 +442,7 @@ fn validate_non_timeout_authorization(
                 revealer: edge_role,
                 ..
             },
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: authorization_role,
             },
         ) if edge_role == authorization_role => Ok(()),

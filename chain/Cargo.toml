@@ -13,10 +13,7 @@ authors = ["BP52 contributors"]
 bitcoin = { version = "=0.32.102", default-features = false, features = ["std", "rand-std", "secp-recovery"] }
 bitcoin_hashes = "=0.14.101"
 chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"] }
-bp52-bitcoin = { path = "../dealing/crates/bp52-bitcoin" }
-bp52-codec = { path = "../dealing/crates/bp52-codec" }
-bp52-group = { path = "../dealing/crates/bp52-group" }
-bp52-protocol = { path = "../dealing/crates/bp52-protocol" }
+bp52-codec = { path = "crates/bp52-codec" }
 dlog52-bitcoin = { path = "../dealing-dlog/crates/dlog52-bitcoin" }
 dlog52-protocol = { path = "../dealing-dlog/crates/dlog52-protocol" }
 rand_core = { version = "=0.6.4", features = ["getrandom"] }

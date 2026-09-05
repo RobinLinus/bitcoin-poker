@@ -119,18 +119,13 @@ export CARGO_INCREMENTAL=0
 export CC_wasm32_unknown_unknown="${wasm_cc}"
 export CFLAGS_wasm32_unknown_unknown="--target=wasm32-unknown-unknown -ffile-prefix-map=${repository_root}=."
 export RANLIB_wasm32_unknown_unknown="${wasm_ranlib}"
-# Keep curve25519-dalek's wasm32-selected 32-bit limbs. They map widened limb
-# multiplication onto Wasm's native i64 operation; forcing its 64-bit limbs
-# lowers widened products into substantially slower software i128 arithmetic.
 export RUSTFLAGS="--remap-path-prefix=${repository_root}=."
 export SOURCE_DATE_EPOCH=0
 CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"${client_root}/target/browser-wasm"}
 export CARGO_TARGET_DIR
 
 while IFS= read -r package; do
-  # Build each boundary in its own Cargo invocation. In particular, DEAL's
-  # pure-Rust BIP340 feature must not be unified with the rust-secp256k1
-  # features used by the GAME and CHAIN artifacts.
+  # Build each surviving security boundary independently.
   cargo build \
     --manifest-path "${client_root}/Cargo.toml" \
     --locked \
@@ -140,9 +135,6 @@ while IFS= read -r package; do
 done <<'PACKAGES'
 bp52-browser-wallet-wasm
 bp52-browser-origin-wasm
-bp52-browser-deal-wasm
-bp52-browser-game-wasm
-bp52-browser-chain-wasm
 bp52-browser-transaction-wasm
 PACKAGES
 

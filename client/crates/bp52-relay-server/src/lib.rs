@@ -10,7 +10,7 @@
 //!
 //! The JSON field called `gameId` is only a client-random relay-room locator.
 //! It is not, and must never be substituted for, the descriptor-bound
-//! BP52-DEAL or BP52-CHAIN `game_id` computed later by protocol code.
+//! dlog deal or chain `game_id` computed later by protocol code.
 //!
 //! Hard live-storage quotas and a 24-hour inactivity expiry bound disk use,
 //! but this process is not an Internet edge. A public deployment must still
@@ -35,7 +35,6 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use bp52_chain_compiler::HEADS_UP_FIXED_LIMIT_V1_PROFILE;
 use bp52_client_ports::{
     BrowserDeploymentConfig, DeploymentConfig, FeeScheduleConfig, GameDeploymentConfig,
     ProtocolProfileName, RevealOrderConfig, TimeoutPolicyName,
@@ -131,29 +130,9 @@ impl RelayServer {
             .route("/wasm/manifest.json", get(wasm_manifest))
             .route("/wasm/wallet.wasm", get(wallet_wasm))
             .route("/wasm/origin.wasm", get(origin_wasm))
-            .route("/wasm/deal.wasm", get(deal_wasm))
             .route("/wasm/dlog52.wasm", get(dlog52_wasm))
-            .route("/wasm/game.wasm", get(game_wasm))
-            .route("/wasm/chain.wasm", get(chain_wasm))
             .route("/wasm/transaction.wasm", get(transaction_wasm))
             .route("/origin-client.js", get(origin_client_script))
-            .route("/browser/flow/game-client.js", get(game_client_script))
-            .route(
-                "/browser/flow/chain-game-client.js",
-                get(chain_game_client_script),
-            )
-            .route(
-                "/browser/flow/game-chain-safety.js",
-                get(game_chain_safety_script),
-            )
-            .route("/browser/flow/orchestration.js", get(orchestration_script))
-            .route(
-                "/browser/flow/origin-coordination.js",
-                get(origin_coordination_script),
-            )
-            .route("/browser/flow/setup-planner.js", get(setup_planner_script))
-            .route("/browser/flow/table-stakes.js", get(table_stakes_script))
-            .route("/browser/flow/table-view.js", get(table_view_script))
             .route("/browser/ui/bitcoin-amount.js", get(bitcoin_amount_script))
             .route(
                 "/browser/worker/rpc-client.js",
@@ -163,8 +142,6 @@ impl RelayServer {
                 "/browser/worker/serial-dispatch.js",
                 get(worker_serial_dispatch_script),
             )
-            .route("/browser/deal/deal-runtime.js", get(deal_runtime_script))
-            .route("/browser/deal/deal-worker.js", get(deal_worker_script))
             .route(
                 "/browser/deal/dlog52-runtime.js",
                 get(dlog52_runtime_script),
@@ -174,33 +151,8 @@ impl RelayServer {
             .route("/dlog52-demo.js", get(dlog52_demo_script))
             .route("/dlog52-game.js", get(dlog52_game_script))
             .route(
-                "/browser/deal/proof-schedule.js",
-                get(deal_proof_schedule_script),
-            )
-            .route(
-                "/browser/deal/deal-proof-worker.js",
-                get(deal_proof_worker_script),
-            )
-            .route("/browser/game/game-runtime.js", get(game_runtime_script))
-            .route("/browser/game/game-worker.js", get(game_worker_script))
-            .route(
                 "/browser/game/offchain-ratchet.js",
                 get(offchain_ratchet_script),
-            )
-            .route("/browser/chain/chain-runtime.js", get(chain_runtime_script))
-            .route("/browser/chain/chain-worker.js", get(chain_worker_script))
-            .route("/browser/chain/chain-client.js", get(chain_client_script))
-            .route(
-                "/browser/chain/setup-schedule.js",
-                get(chain_setup_schedule_script),
-            )
-            .route(
-                "/browser/chain/preauthorization-verifier-pool.js",
-                get(preauthorization_verifier_pool_script),
-            )
-            .route(
-                "/browser/chain/preauthorization-verifier-worker.js",
-                get(preauthorization_verifier_worker_script),
             )
             .route(
                 "/browser/config/runtime-config.js",
@@ -217,7 +169,6 @@ impl RelayServer {
                 "/browser/chain-adapter/transaction-runtime.js",
                 get(transaction_runtime_script),
             )
-            .route("/app.js", get(application_script))
             .route("/api/v1/config", get(get_deployment_config))
             .route("/api/v1/games", post(create_game))
             .route("/api/v1/games/{game_id}", get(get_game))
@@ -345,7 +296,6 @@ fn resolve_deployment(
 }
 
 fn audited_game_config(operator: &GameDeploymentConfig) -> GameDeploymentConfig {
-    let profile = HEADS_UP_FIXED_LIMIT_V1_PROFILE;
     GameDeploymentConfig {
         staging_contribution_sat: CONTRIBUTION_SAT,
         origin_funding_fee_sat: FUNDING_FEE_SAT,
@@ -355,17 +305,17 @@ fn audited_game_config(operator: &GameDeploymentConfig) -> GameDeploymentConfig 
         origin_refund_fee_sat: REFUND_FEE_SAT,
         refund_output_sat: REFUND_VALUE_PER_PARTICIPANT_SAT,
         refund_csv_blocks: REFUND_DELAY_BLOCKS,
-        unit_sat: profile.unit_sat,
-        max_bets_per_street: profile.max_bets_per_street,
-        starting_stack_sat: profile.stack_per_player_sat,
-        fee_reserve_sat: profile.fee_reserve_sat,
+        unit_sat: 100,
+        max_bets_per_street: 4,
+        starting_stack_sat: 20_000,
+        fee_reserve_sat: 13_000,
         dust_threshold_sat: P2WSH_MIN_NON_DUST_SAT,
         fees: FeeScheduleConfig {
-            betting_sat: profile.betting_vbytes * profile.relay_sat_per_vbyte,
-            reveal_sat: profile.reveal_vbytes * profile.relay_sat_per_vbyte,
-            alice_showdown_sat: profile.alice_showdown_vbytes * profile.relay_sat_per_vbyte,
-            bob_payout_sat: profile.bob_payout_vbytes * profile.relay_sat_per_vbyte,
-            timeout_sat: profile.timeout_vbytes * profile.relay_sat_per_vbyte,
+            betting_sat: 224 * 1,
+            reveal_sat: 264 * 1,
+            alice_showdown_sat: 2_203 * 1,
+            bob_payout_sat: 3_089 * 1,
+            timeout_sat: 232 * 1,
         },
         button: operator.button,
         reveal_order: RevealOrderConfig {
@@ -747,34 +697,12 @@ async fn origin_wasm() -> impl IntoResponse {
     wasm_asset(include_bytes!("../web/wasm/origin.wasm"))
 }
 
-async fn deal_wasm() -> impl IntoResponse {
-    wasm_asset(include_bytes!("../web/wasm/deal.wasm"))
-}
-
 async fn dlog52_wasm() -> impl IntoResponse {
     wasm_asset(include_bytes!("../web/wasm/dlog52.wasm"))
 }
 
-async fn game_wasm() -> impl IntoResponse {
-    wasm_asset(include_bytes!("../web/wasm/game.wasm"))
-}
-
-async fn chain_wasm() -> impl IntoResponse {
-    wasm_asset(include_bytes!("../web/wasm/chain.wasm"))
-}
-
 async fn transaction_wasm() -> impl IntoResponse {
     wasm_asset(include_bytes!("../web/wasm/transaction.wasm"))
-}
-
-async fn application_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../web/app.js"),
-    )
 }
 
 async fn origin_client_script() -> impl IntoResponse {
@@ -784,86 +712,6 @@ async fn origin_client_script() -> impl IntoResponse {
             HeaderValue::from_static("text/javascript; charset=utf-8"),
         )],
         include_str!("../web/origin-client.js"),
-    )
-}
-
-async fn game_client_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/game-client.js"),
-    )
-}
-
-async fn chain_game_client_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/chain-game-client.js"),
-    )
-}
-
-async fn game_chain_safety_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/game-chain-safety.js"),
-    )
-}
-
-async fn orchestration_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/orchestration.js"),
-    )
-}
-
-async fn origin_coordination_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/origin-coordination.js"),
-    )
-}
-
-async fn setup_planner_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/setup-planner.js"),
-    )
-}
-
-async fn table_stakes_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/table-stakes.js"),
-    )
-}
-
-async fn table_view_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/flow/table-view.js"),
     )
 }
 
@@ -894,26 +742,6 @@ async fn worker_serial_dispatch_script() -> impl IntoResponse {
             HeaderValue::from_static("text/javascript; charset=utf-8"),
         )],
         include_str!("../../../browser/worker/serial-dispatch.js"),
-    )
-}
-
-async fn deal_runtime_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/deal/deal-runtime.js"),
-    )
-}
-
-async fn deal_worker_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/deal/deal-worker.js"),
     )
 }
 
@@ -967,46 +795,6 @@ async fn dlog52_game_script() -> impl IntoResponse {
     )
 }
 
-async fn deal_proof_schedule_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/deal/proof-schedule.js"),
-    )
-}
-
-async fn deal_proof_worker_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/deal/deal-proof-worker.js"),
-    )
-}
-
-async fn game_runtime_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/game/game-runtime.js"),
-    )
-}
-
-async fn game_worker_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/game/game-worker.js"),
-    )
-}
-
 async fn offchain_ratchet_script() -> impl IntoResponse {
     (
         [(
@@ -1014,66 +802,6 @@ async fn offchain_ratchet_script() -> impl IntoResponse {
             HeaderValue::from_static("text/javascript; charset=utf-8"),
         )],
         include_str!("../../../browser/game/offchain-ratchet.js"),
-    )
-}
-
-async fn chain_runtime_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/chain/chain-runtime.js"),
-    )
-}
-
-async fn chain_worker_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/chain/chain-worker.js"),
-    )
-}
-
-async fn chain_client_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/chain/chain-client.js"),
-    )
-}
-
-async fn preauthorization_verifier_pool_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/chain/preauthorization-verifier-pool.js"),
-    )
-}
-
-async fn chain_setup_schedule_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/chain/setup-schedule.js"),
-    )
-}
-
-async fn preauthorization_verifier_worker_script() -> impl IntoResponse {
-    (
-        [(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/javascript; charset=utf-8"),
-        )],
-        include_str!("../../../browser/chain/preauthorization-verifier-worker.js"),
     )
 }
 

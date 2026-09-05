@@ -4,15 +4,14 @@
 //! materialization. [`LogicalGraphPlan`] retains every semantic fact required
 //! by that later top-down pass without fabricating executable scripts or txids.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use bp52_chain_bitcoin::{FeeClass, FeeError, FeePolicy, RevealPattern};
 use bp52_chain_types::{
-    AcceptedDeal, Action, AmountState, AuthorizationPolicy, BettingState, BettingTransition,
-    ChainError, ChainGameDescriptor, EdgeKind, NodeId, NodeKind, Phase, PokerRules, Role,
-    ShowdownOutcome, StateDigest, Street, TerminalAccounting, TerminalOutcome, TimeoutKind,
-    TimeoutSpec, VerifiedChainDescriptor, chain_game_id, child_node_id, logical_state_digest,
-    root_node_id, tagged_sha256, terminal_accounting,
+    Action, AmountState, AuthorizationPolicy, BettingState, BettingTransition, ChainError,
+    EdgeKind, NodeId, NodeKind, Phase, PokerRules, Role, ShowdownOutcome, StateDigest, Street,
+    TerminalAccounting, TerminalOutcome, TimeoutKind, TimeoutSpec, child_node_id,
+    logical_state_digest, root_node_id, terminal_accounting,
 };
 use bp52_codec::{CodecError, Encode, Writer};
 use bp52_lamport::{ExpectedLamportEntry, LamportPurpose};
@@ -34,46 +33,6 @@ use crate::{
 pub const REFERENCE_ALICE_LAMPORT_ENTRIES: usize = 1;
 /// Exact number of Bob-controlled score Lamport keys in one game.
 pub const REFERENCE_BOB_LAMPORT_ENTRIES: usize = 1;
-
-const COMPILER_PROFILE_TAG: &str = "BP52/chain-compiler-profile/v11";
-const COMPILER_PROFILE_DESCRIPTION: &[u8] = concat!(
-    "chain_protocol_version=4\n",
-    "compiler_profile=bp52-chain-reference-v11\n",
-    "card_encoding=rank-major:card_id=rank*4+suit\n",
-    "showdown_category_claim=positive-lower-bound;stronger-hands-accepted\n",
-    "profile_erratum=funded-deal-alice-obligation-is-root\n",
-    "descriptor_funding_outpoint=pre-existing-origin-escrow\n",
-    "activation_template=version2-one-input-one-root-output-final-sequence\n",
-    "gameplay_root_outpoint=activation-txid-vout0\n",
-    "activation_counted_in_graph=false\n",
-    "timeout_settlement_policy=pot-only;slash-reserved-rejected\n",
-    "graph_shape=descriptor-derived;deep-reference-nodes=56132;deep-reference-transactions=56131\n",
-    "maximum_path=descriptor-derived;deep-reference-maximum=33\n",
-    "fee_reserve=descriptor-derived-maximum-executed-path\n",
-    "max_bets_per_street=descriptor-bound-range-1-through-4\n",
-    "phase_transitions=direct-no-intermediate-advance-nodes\n",
-    "edge_order=path-code-ascending-timeout-last\n",
-    "edge_codes=action:00000000-00000004;hole:00010000-00010001;",
-    "community:0002<street><role>;alice:00030000;bob:00040000-00040002;",
-    "advance:00001000-0000100d;timeout:00ff0000-00ff0002\n",
-    "state_codec=bp52-chain-types-v2-little-endian\n",
-    "state_output_commitment=hidden-unspendable-tapleaf:OP_RETURN-BP52SC1-logical_state_digest\n",
-    "action_authorization=opponent-fixed-preauthorization;actor-live-signature\n",
-    "timeout_authorization=opponent-fixed-preauthorization;beneficiary-live-signature\n",
-    "network_identity=standard-genesis-or-tagged-custom-signet-genesis-plus-challenge\n",
-    "action_lamport_keys=none\n",
-    "showdown_lamport_keys=one-game-root-bound-score-key-per-role;mutually-exclusive-branches\n",
-    "all_in=implicit-effective-stack-cap;responder-fold-or-call;called-all-in-forced-runout\n",
-    "action_leaf=two-checksig-canonical-alice-bob-order\n",
-    "bitcoin_signature_profile=taproot-sighash-default-64-byte-all-semantics\n",
-)
-.as_bytes();
-
-/// Returns the identifier of the descriptor-derived reference compiler profile.
-#[must_use]
-pub fn reference_compiler_id() -> [u8; 32] {
-    tagged_sha256(COMPILER_PROFILE_TAG, COMPILER_PROFILE_DESCRIPTION)
-}
 
 /// Stable logical state committed by one planned node.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -308,51 +267,6 @@ impl LogicalGraphPlan {
     }
 }
 
-/// Compiles the descriptor-derived graph without constructing scripts.
-///
-/// The activation output is the Deal-Alice obligation root. Every local
-/// betting continuation is replaced directly by a fresh next-phase subtree;
-/// there are no shared nodes and no witness-free `Advance` transactions.
-///
-/// # Errors
-///
-/// Rejects descriptor/deal/policy/profile mismatches, insufficient maximum-path
-/// reserve, checked arithmetic failures, or any internal profile discrepancy.
-pub fn compile_logical_graph(
-    verified_descriptor: &VerifiedChainDescriptor,
-    verified_deal: &bp52_protocol::VerifiedAcceptedDeal,
-    fee_policy: &dyn FeePolicy,
-) -> Result<LogicalGraphPlan, CompilerError> {
-    let descriptor = verified_descriptor.as_descriptor();
-    compile_logical_graph_descriptor(descriptor, verified_deal.as_deal(), fee_policy)
-}
-
-pub(crate) fn compile_logical_graph_descriptor(
-    descriptor: &ChainGameDescriptor,
-    deal: &AcceptedDeal,
-    fee_policy: &dyn FeePolicy,
-) -> Result<LogicalGraphPlan, CompilerError> {
-    bp52_chain_types::validate_chain_descriptor(descriptor)?;
-    if deal != &descriptor.deal {
-        return Err(CompilerError::DealMismatch);
-    }
-    if fee_policy.policy_id() != descriptor.fee_policy_id {
-        return Err(CompilerError::FeePolicyMismatch);
-    }
-    let expected_compiler_id = compiler_id_for_descriptor(descriptor);
-    if descriptor.compiler_id != expected_compiler_id {
-        return Err(CompilerError::CompilerIdMismatch);
-    }
-
-    let plan = compile_rules_graph(
-        &PokerRules::from(descriptor),
-        chain_game_id(descriptor)?,
-        fee_policy,
-    )?;
-    verify_plan_against_descriptor(&plan, descriptor, fee_policy)?;
-    Ok(plan)
-}
-
 /// Shared complete poker topology; callers must authenticate the profile ID.
 pub(crate) fn compile_rules_graph(
     descriptor: &PokerRules,
@@ -409,68 +323,7 @@ pub(crate) struct FeeSchedule {
     timeout: u64,
 }
 
-/// Immutable fee-policy facts retained by a materialized graph.
-///
-/// A [`FeePolicy`] is an arbitrary trait object, so a compiled graph cannot
-/// clone it for later independent verification. This snapshot records every
-/// policy result that can affect this finite plan: the class schedule, dust
-/// threshold, and each terminal reserve disposition actually used.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct FeePolicySnapshot {
-    policy_id: [u8; 32],
-    schedule: FeeSchedule,
-    dust_threshold: u64,
-    reserve_splits: BTreeMap<(u64, Role), (u64, u64)>,
-}
-
-impl FeePolicySnapshot {
-    pub(crate) fn capture(
-        policy: &dyn FeePolicy,
-        descriptor: &ChainGameDescriptor,
-        plan: &LogicalGraphPlan,
-    ) -> Result<Self, CompilerError> {
-        let schedule = FeeSchedule::new(policy)?;
-        let mut reserve_splits = BTreeMap::new();
-        for terminal in plan.nodes.iter().filter_map(|node| match node.state {
-            PlannedState::Terminal(terminal) => Some(terminal),
-            _ => None,
-        }) {
-            let key = (
-                terminal.accounting.fee_reserve_remaining,
-                descriptor.split_remainder_recipient,
-            );
-            let split = policy.split_unused_reserve(key.0, key.1);
-            let repeated = policy.split_unused_reserve(key.0, key.1);
-            if split != repeated {
-                return Err(profile(
-                    "fee policy reserve disposition is nondeterministic",
-                ));
-            }
-            verify_reserve_split(key.0, split)?;
-            if reserve_splits
-                .insert(key, split)
-                .is_some_and(|old| old != split)
-            {
-                return Err(profile(
-                    "fee policy reserve disposition changed during capture",
-                ));
-            }
-        }
-        Ok(Self {
-            policy_id: policy.policy_id(),
-            schedule,
-            dust_threshold: policy.dust_threshold(),
-            reserve_splits,
-        })
-    }
-
-    pub(crate) const fn dust_threshold(&self) -> u64 {
-        self.dust_threshold
-    }
-}
-
 trait FeeSemantics {
-    fn policy_id(&self) -> [u8; 32];
     fn schedule(&self) -> Result<FeeSchedule, CompilerError>;
     fn dust_threshold(&self) -> u64;
     fn reserve_split(
@@ -483,10 +336,6 @@ trait FeeSemantics {
 struct LiveFeeSemantics<'a>(&'a dyn FeePolicy);
 
 impl FeeSemantics for LiveFeeSemantics<'_> {
-    fn policy_id(&self) -> [u8; 32] {
-        self.0.policy_id()
-    }
-
     fn schedule(&self) -> Result<FeeSchedule, CompilerError> {
         FeeSchedule::new(self.0)
     }
@@ -503,31 +352,6 @@ impl FeeSemantics for LiveFeeSemantics<'_> {
         let split = self.0.split_unused_reserve(remaining, remainder_recipient);
         verify_reserve_split(remaining, split)?;
         Ok(split)
-    }
-}
-
-impl FeeSemantics for FeePolicySnapshot {
-    fn policy_id(&self) -> [u8; 32] {
-        self.policy_id
-    }
-
-    fn schedule(&self) -> Result<FeeSchedule, CompilerError> {
-        Ok(self.schedule)
-    }
-
-    fn dust_threshold(&self) -> u64 {
-        self.dust_threshold
-    }
-
-    fn reserve_split(
-        &self,
-        remaining: u64,
-        remainder_recipient: Role,
-    ) -> Result<(u64, u64), CompilerError> {
-        self.reserve_splits
-            .get(&(remaining, remainder_recipient))
-            .copied()
-            .ok_or_else(|| profile("fee-policy snapshot lacks terminal reserve disposition"))
     }
 }
 
@@ -638,7 +462,7 @@ impl<'a> GraphBuilder<'a> {
             self.build_deal_bob(root_id, normal_kind, normal_amounts, 1, next_step)?;
         let normal = self.edge(
             normal_kind,
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: step.pattern.revealer(),
             },
             normal_child,
@@ -680,7 +504,7 @@ impl<'a> GraphBuilder<'a> {
             self.build_betting_tree(node_id, normal_kind, &tree, preflop, next_depth(depth)?)?;
         let normal = self.edge(
             normal_kind,
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: step.pattern.revealer(),
             },
             normal_child,
@@ -867,7 +691,7 @@ impl<'a> GraphBuilder<'a> {
         )?;
         let normal = self.edge(
             normal_kind,
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: first.pattern.revealer(),
             },
             normal_child,
@@ -914,7 +738,7 @@ impl<'a> GraphBuilder<'a> {
         };
         let normal = self.edge(
             normal_kind,
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: step.pattern.revealer(),
             },
             normal_child,
@@ -1223,49 +1047,6 @@ impl<'a> GraphBuilder<'a> {
     }
 }
 
-/// Reverify all descriptor- and live-fee-policy-dependent plan semantics.
-pub(crate) fn verify_plan_against_descriptor(
-    plan: &LogicalGraphPlan,
-    descriptor: &ChainGameDescriptor,
-    fee_policy: &dyn FeePolicy,
-) -> Result<(), CompilerError> {
-    verify_plan_against_fee_semantics(plan, descriptor, &LiveFeeSemantics(fee_policy))
-}
-
-/// Reverify a materialized plan against the immutable fee facts it retained.
-pub(crate) fn verify_plan_against_snapshot(
-    plan: &LogicalGraphPlan,
-    descriptor: &ChainGameDescriptor,
-    fee_policy: &FeePolicySnapshot,
-) -> Result<(), CompilerError> {
-    verify_plan_against_fee_semantics(plan, descriptor, fee_policy)
-}
-
-fn verify_plan_against_fee_semantics(
-    plan: &LogicalGraphPlan,
-    descriptor: &ChainGameDescriptor,
-    fee_policy: &impl FeeSemantics,
-) -> Result<(), CompilerError> {
-    bp52_chain_types::validate_chain_descriptor(descriptor)?;
-    if descriptor.compiler_id != compiler_id_for_descriptor(descriptor) {
-        return Err(CompilerError::CompilerIdMismatch);
-    }
-    if descriptor.fee_policy_id != fee_policy.policy_id() {
-        return Err(CompilerError::FeePolicyMismatch);
-    }
-    if fee_policy.dust_threshold() == 0 {
-        return Err(FeeError::ZeroDustThreshold.into());
-    }
-    plan.verify()?;
-    let expected_chain_id = chain_game_id(descriptor)?;
-    if plan.chain_game_id != expected_chain_id
-        || plan.root_node_id != root_node_id(&expected_chain_id)
-    {
-        return Err(profile("logical plan is not bound to the descriptor"));
-    }
-    verify_rules_plan(plan, &PokerRules::from(descriptor), fee_policy)
-}
-
 fn verify_rules_plan(
     plan: &LogicalGraphPlan,
     descriptor: &PokerRules,
@@ -1309,11 +1090,6 @@ fn verify_rules_plan(
         }
     }
     Ok(())
-}
-
-fn compiler_id_for_descriptor(descriptor: &ChainGameDescriptor) -> [u8; 32] {
-    let _ = descriptor;
-    reference_compiler_id()
 }
 
 fn verify_betting_action_set(
@@ -2153,7 +1929,7 @@ fn verify_edge_semantics(parent: &PlannedNode, edge: &PlannedEdge) -> Result<(),
                 revealer: edge_role,
                 ..
             },
-            AuthorizationPolicy::RevealPreimages {
+            AuthorizationPolicy::RevealOpenings {
                 revealer: authorization_role,
             },
             None,
@@ -2296,18 +2072,19 @@ mod tests {
 
     use super::{
         LiveFeeSemantics, LogicalGraphPlan, PlannedNode, PlannedState, PlannedTerminal,
-        REFERENCE_ALICE_LAMPORT_ENTRIES, REFERENCE_BOB_LAMPORT_ENTRIES,
-        compile_logical_graph_descriptor, reference_compiler_id, verify_betting_action_set,
-        verify_child_semantics, verify_exact_outgoing_kinds, verify_terminal_intrinsic,
-        verify_transition_against_descriptor,
+        REFERENCE_ALICE_LAMPORT_ENTRIES, REFERENCE_BOB_LAMPORT_ENTRIES, compile_rules_graph,
+        verify_betting_action_set, verify_child_semantics, verify_exact_outgoing_kinds,
+        verify_terminal_intrinsic, verify_transition_against_descriptor,
     };
     use crate::{
-        CompilerError, REFERENCE_ALICE_PREAUTHORIZATIONS, REFERENCE_ALICE_RUNTIME_SIGNATURES,
-        REFERENCE_BOB_PREAUTHORIZATIONS, REFERENCE_BOB_RUNTIME_SIGNATURES,
-        REFERENCE_MAX_PATH_LENGTH, REFERENCE_TOTAL_NODE_COUNT, REFERENCE_TRANSACTION_COUNT,
-        test_support::descriptor_fixture,
+        CompilerError, REFERENCE_MAX_PATH_LENGTH, REFERENCE_TOTAL_NODE_COUNT,
+        REFERENCE_TRANSACTION_COUNT, test_support::descriptor_fixture,
     };
 
+    const REFERENCE_ALICE_PREAUTHORIZATIONS: usize = 24_877;
+    const REFERENCE_BOB_PREAUTHORIZATIONS: usize = 14_671;
+    const REFERENCE_ALICE_RUNTIME_SIGNATURES: usize = 8_930;
+    const REFERENCE_BOB_RUNTIME_SIGNATURES: usize = 24_239;
     #[derive(Clone, Copy)]
     struct ZeroFeePolicy;
 
@@ -2335,28 +2112,19 @@ mod tests {
 
     fn graph_fixture() -> Result<LogicalGraphPlan, Box<dyn std::error::Error>> {
         let policy = FixedFeePolicy::new(200, 330)?;
-        let mut descriptor = descriptor_fixture()?;
-        descriptor.fee_policy_id = policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
-        Ok(compile_logical_graph_descriptor(
-            &descriptor,
-            &descriptor.deal,
-            &policy,
-        )?)
+        let descriptor = descriptor_fixture()?;
+        Ok(compile_rules_graph(&descriptor, [7; 32], &policy)?)
     }
 
     fn stack_graph_fixture(
         alice_units: u64,
         bob_units: u64,
-    ) -> Result<(bp52_chain_types::ChainGameDescriptor, LogicalGraphPlan), Box<dyn std::error::Error>>
-    {
+    ) -> Result<(bp52_chain_types::PokerRules, LogicalGraphPlan), Box<dyn std::error::Error>> {
         let policy = FixedFeePolicy::new(200, 330)?;
         let mut descriptor = descriptor_fixture()?;
         descriptor.alice_starting_stack_sat = descriptor.unit_sat * alice_units;
         descriptor.bob_starting_stack_sat = descriptor.unit_sat * bob_units;
-        descriptor.fee_policy_id = policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
-        let plan = compile_logical_graph_descriptor(&descriptor, &descriptor.deal, &policy)?;
+        let plan = compile_rules_graph(&descriptor, [7; 32], &policy)?;
         Ok((descriptor, plan))
     }
 
@@ -2825,7 +2593,7 @@ mod tests {
                         alice_preauthorizations += 1;
                         bob_preauthorizations += 1;
                     }
-                    AuthorizationPolicy::RevealPreimages { revealer } => match revealer {
+                    AuthorizationPolicy::RevealOpenings { revealer } => match revealer {
                         Role::Alice => bob_preauthorizations += 1,
                         Role::Bob => alice_preauthorizations += 1,
                     },
@@ -2941,10 +2709,8 @@ mod tests {
     fn funded_root_posts_blinds_before_hole_reveal_timeouts()
     -> Result<(), Box<dyn std::error::Error>> {
         let policy = FixedFeePolicy::new(200, 330)?;
-        let mut descriptor = descriptor_fixture()?;
-        descriptor.fee_policy_id = policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
-        let plan = compile_logical_graph_descriptor(&descriptor, &descriptor.deal, &policy)?;
+        let descriptor = descriptor_fixture()?;
+        let plan = compile_rules_graph(&descriptor, [7; 32], &policy)?;
         let initial = BettingState::initial_preflop(&descriptor)?;
         let root = &plan.nodes[0];
 
@@ -3024,10 +2790,8 @@ mod tests {
     fn descriptor_verifier_rejects_semantic_mutations() -> Result<(), Box<dyn std::error::Error>> {
         let policy = FixedFeePolicy::new(200, 330)?;
         let fee_semantics = LiveFeeSemantics(&policy);
-        let mut descriptor = descriptor_fixture()?;
-        descriptor.fee_policy_id = policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
-        let plan = compile_logical_graph_descriptor(&descriptor, &descriptor.deal, &policy)?;
+        let descriptor = descriptor_fixture()?;
+        let plan = compile_rules_graph(&descriptor, [7; 32], &policy)?;
 
         let betting = plan
             .nodes
@@ -3165,12 +2929,10 @@ mod tests {
     #[test]
     fn all_zero_fee_logical_graph_is_supported() -> Result<(), Box<dyn std::error::Error>> {
         let policy = ZeroFeePolicy;
-        let mut descriptor = descriptor_fixture()?;
-        descriptor.fee_policy_id = policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
+        let descriptor = descriptor_fixture()?;
         let initial_reserve = descriptor.fee_reserve_sat;
 
-        let plan = compile_logical_graph_descriptor(&descriptor, &descriptor.deal, &policy)?;
+        let plan = compile_rules_graph(&descriptor, [7; 32], &policy)?;
         assert_eq!(plan.maximum_path_fee_sat, 0);
         assert!(
             plan.nodes
@@ -3191,36 +2953,6 @@ mod tests {
                 terminal.amounts.fee_reserve_remaining == initial_reserve
             }
         }));
-        Ok(())
-    }
-
-    #[test]
-    fn compiler_binding_and_maximum_reserve_fail_closed() -> Result<(), Box<dyn std::error::Error>>
-    {
-        let policy = FixedFeePolicy::new(200, 330)?;
-        let mut descriptor = descriptor_fixture()?;
-        descriptor.fee_policy_id = policy.policy_id();
-        descriptor.compiler_id = reference_compiler_id();
-
-        let mut wrong_deal = descriptor.deal;
-        wrong_deal.attempt = wrong_deal.attempt.wrapping_add(1);
-        assert!(matches!(
-            compile_logical_graph_descriptor(&descriptor, &wrong_deal, &policy),
-            Err(CompilerError::DealMismatch)
-        ));
-
-        let mut wrong_compiler = descriptor;
-        wrong_compiler.compiler_id[0] ^= 1;
-        assert!(matches!(
-            compile_logical_graph_descriptor(&wrong_compiler, &wrong_compiler.deal, &policy),
-            Err(CompilerError::CompilerIdMismatch)
-        ));
-
-        let mut underfunded = descriptor;
-        underfunded.fee_reserve_sat = 6_599;
-        let underfunded_result =
-            compile_logical_graph_descriptor(&underfunded, &underfunded.deal, &policy);
-        assert!(underfunded_result.is_err());
         Ok(())
     }
 }
