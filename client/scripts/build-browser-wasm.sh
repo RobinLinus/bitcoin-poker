@@ -146,6 +146,16 @@ bp52-browser-chain-wasm
 bp52-browser-transaction-wasm
 PACKAGES
 
+# DLOG52 is intentionally a separate Cargo workspace. Build it into the same
+# artifact directory while preserving the 8 MiB Wasm stack required by the
+# fixed 927-candidate catalogue verifier.
+RUSTFLAGS="${RUSTFLAGS} -C link-arg=-zstack-size=8388608" cargo build \
+  --manifest-path "${repository_root}/dealing-dlog/Cargo.toml" \
+  --locked \
+  --release \
+  --target "${target}" \
+  --package dlog52-wasm
+
 artifact_directory="${CARGO_TARGET_DIR}/${target}/release"
 if [ "${publish}" -eq 1 ]; then
   node "${client_root}/scripts/package-browser-wasm.mjs" \

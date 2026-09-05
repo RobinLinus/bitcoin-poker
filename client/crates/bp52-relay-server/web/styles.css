@@ -249,20 +249,24 @@ main { width: min(1220px, calc(100% - 40px)); margin: 0 auto; }
   white-space: nowrap;
   box-shadow: 0 5px 18px rgba(0, 0, 0, 0.24);
 }
-.card-pair { display: flex; }
-.card-pair span { width: 28px; height: 39px; border: 2px solid var(--cream); border-radius: 4px; background: repeating-linear-gradient(45deg, #17382a, #17382a 3px, #24543e 3px, #24543e 6px); box-shadow: 0 4px 10px rgba(0,0,0,.25); }
-.card-pair span + span { margin-left: -17px; transform: rotate(6deg); }
+.card-pair { display: flex; align-items: center; }
+.card-pair > span { width: 44px; height: 62px; border: 2px solid var(--cream); border-radius: 6px; background: repeating-linear-gradient(45deg, #17382a, #17382a 3px, #24543e 3px, #24543e 6px); box-shadow: 0 4px 10px rgba(0,0,0,.25); }
+.card-pair > span + span { margin-left: -27px; transform: rotate(6deg); }
 .pot-display { position: absolute; top: 28%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
 .pot-display span, .pot-display strong { display: block; }
 .pot-display span { color: rgba(255,255,255,.58); font: 700 9px/1 ui-monospace, monospace; letter-spacing: .15em; text-transform: uppercase; }
 .pot-display strong { margin-top: 7px; font-size: 16px; }
 .community-cards { position: absolute; top: 41%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 7px; }
-.playing-card { width: 54px; height: 74px; display: grid; place-items: center; border-radius: 6px; }
+.playing-card { width: 64px; height: 88px; display: grid; place-items: center; border-radius: 8px; }
 .playing-card.empty { border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.24); font: 600 11px/1 ui-monospace, monospace; }
-.playing-card.dealt, .card-pair span.dealt { background: #fffdf6; border: 1px solid #ded7c8; color: #18211c; font: 700 18px/1 Georgia, serif; text-shadow: none; }
-.playing-card.dealt.red, .card-pair span.dealt.red { color: #b82f3d; }
-.card-pair span.dealt { display: grid; place-items: center; }
-.card-pair.face-up span + span { margin-left: 5px; transform: none; }
+.playing-card.dealt, .card-pair > span.dealt { background: #fffdf6; border: 1px solid #ded7c8; color: #18211c; font: 700 18px/1 Georgia, serif; text-shadow: none; }
+.playing-card.dealt.red, .card-pair > span.dealt.red { color: #b82f3d; }
+.card-pair > span.dealt { display: grid; place-items: center; font-size: 18px; }
+.card-pair.face-up > span + span { margin-left: 8px; transform: none; }
+.card-label { display: inline-flex; align-items: baseline; justify-content: center; max-width: 100%; white-space: nowrap; }
+.card-label .card-suit { margin-left: 1px; font-size: 1em; }
+.card-label.wide-rank .card-rank { letter-spacing: -.06em; }
+.card-label.wide-rank .card-suit { margin-left: 0; }
 .blind-level {
   position: absolute;
   top: 50%;

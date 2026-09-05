@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
 //! Exact Sigma proof profiles used by DLOG52-DEAL-v1.
 
-use dlog52_codec::Encode;
+use dlog52_codec::{Encode, Reader};
 use dlog52_group::{
-    N_SLOTS, SlotPublic, encode_point, encode_scalar, protocol_parameters, random_scalar,
+    N_SLOTS, SlotPublic, decode_point, decode_scalar, encode_point, encode_scalar,
+    protocol_parameters, random_scalar,
 };
 use dlog52_transcript::hash_scalar;
 use k256::{ProjectivePoint, Scalar, elliptic_curve::Group};
@@ -50,6 +51,14 @@ impl Encode for KeyPop {
         encode_point(&self.t, out);
         encode_scalar(&self.z, out);
     }
+}
+
+/// Decode an exact key proof.
+pub fn decode_key_pop(reader: &mut Reader<'_>) -> Result<KeyPop, ProofError> {
+    Ok(KeyPop {
+        t: decode_point(reader, false).map_err(|_| ProofError::Shape)?,
+        z: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+    })
 }
 
 /// Create the exact key-possession proof.
@@ -144,6 +153,28 @@ impl Encode for Range52Proof {
             encode_scalar(&response.z1, out);
         }
     }
+}
+
+/// Decode the fixed 13,964-byte range proof without wire-directed allocation.
+pub fn decode_range52(reader: &mut Reader<'_>) -> Result<Range52Proof, ProofError> {
+    let mut bit_commitments = Vec::with_capacity(BIT_RECORDS);
+    for _ in 0..BIT_RECORDS {
+        bit_commitments.push(decode_point(reader, true).map_err(|_| ProofError::Shape)?);
+    }
+    let challenge = decode_scalar(reader).map_err(|_| ProofError::Shape)?;
+    let mut responses = Vec::with_capacity(BIT_RECORDS);
+    for _ in 0..BIT_RECORDS {
+        responses.push(BitOrResponse {
+            c0: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+            z0: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+            z1: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+        });
+    }
+    Ok(Range52Proof {
+        bit_commitments,
+        challenge,
+        responses,
+    })
 }
 
 struct OrWitness {
@@ -334,6 +365,18 @@ impl Encode for LinkProofRecord {
     }
 }
 
+/// Decode one fixed encryption-link record.
+pub fn decode_link_record(reader: &mut Reader<'_>) -> Result<LinkProofRecord, ProofError> {
+    Ok(LinkProofRecord {
+        t_v: decode_point(reader, true).map_err(|_| ProofError::Shape)?,
+        t_r: decode_point(reader, true).map_err(|_| ProofError::Shape)?,
+        t_s: decode_point(reader, true).map_err(|_| ProofError::Shape)?,
+        z_v: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+        z_gamma: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+        z_r: decode_scalar(reader).map_err(|_| ProofError::Shape)?,
+    })
+}
+
 /// Construct all nine encryption-link records under one shared challenge.
 pub fn prove_links(
     bundle_statement: &[u8],
@@ -428,6 +471,7 @@ pub fn verify_links(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use dlog52_group::create_slot;

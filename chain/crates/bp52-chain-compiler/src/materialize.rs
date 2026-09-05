@@ -59,9 +59,9 @@ type SignatureRequestSets = (
 );
 
 /// Exact fixed preauthorizations Alice exchanges for the deep-stack reference graph.
-pub const REFERENCE_ALICE_PREAUTHORIZATIONS: usize = 33_168;
+pub const REFERENCE_ALICE_PREAUTHORIZATIONS: usize = 24_877;
 /// Exact fixed preauthorizations Bob exchanges for the deep-stack reference graph.
-pub const REFERENCE_BOB_PREAUTHORIZATIONS: usize = 22_963;
+pub const REFERENCE_BOB_PREAUTHORIZATIONS: usize = 14_671;
 /// Exact timeout signatures Alice retains for the deep-stack reference graph.
 pub const REFERENCE_ALICE_RUNTIME_SIGNATURES: usize = 8_930;
 /// Exact payout and timeout signatures Bob retains for the deep-stack reference graph.
@@ -1544,7 +1544,7 @@ pub(crate) fn programs_for_edge(
                 &descriptor.deal,
                 plan.chain_game_id,
                 node.node_id,
-                key,
+                key.clone(),
                 both,
             )?)])
         }
@@ -1568,8 +1568,8 @@ pub(crate) fn programs_for_edge(
                 node.node_id,
                 alice_showdown_node_id,
                 outcome,
-                alice_score_key,
-                bob_score_key,
+                alice_score_key.clone(),
+                bob_score_key.clone(),
                 both,
             )?)])
         }
@@ -1850,7 +1850,12 @@ fn has_duplicate_runtime_requests(requests: &[RuntimeSignatureRequest]) -> bool 
 pub(crate) fn preauthorized_roles(policy: AuthorizationPolicy) -> impl Iterator<Item = Role> {
     let roles = match policy {
         AuthorizationPolicy::BothPresigned => [Some(Role::Alice), Some(Role::Bob)],
-        AuthorizationPolicy::BettingAction { actor } => [Some(actor.other()), None],
+        // Betting nodes have multiple mutually exclusive children. Giving the
+        // actor counterparty signatures for every child before play would let
+        // it retain and later publish an unchosen sibling. The counterparty
+        // signature for an action is therefore exchanged only after that
+        // exact edge is selected by the off-chain ratchet.
+        AuthorizationPolicy::BettingAction { .. } => [None, None],
         AuthorizationPolicy::RevealPreimages { revealer } => [Some(revealer.other()), None],
         AuthorizationPolicy::AliceScore => [Some(Role::Bob), None],
         AuthorizationPolicy::BobLivePayout => [Some(Role::Alice), None],
@@ -2374,7 +2379,7 @@ mod tests {
     };
 
     #[test]
-    fn each_live_policy_has_exactly_one_counterparty_preauthorizer() {
+    fn only_nonbranching_or_predicate_guarded_policies_are_preauthorized() {
         let roles = |policy| preauthorized_roles(policy).collect::<Vec<_>>();
         assert_eq!(
             roles(AuthorizationPolicy::RevealPreimages {
@@ -2390,10 +2395,7 @@ mod tests {
         );
         assert_eq!(roles(AuthorizationPolicy::AliceScore), [Role::Bob]);
         assert_eq!(roles(AuthorizationPolicy::BobLivePayout), [Role::Alice]);
-        assert_eq!(
-            roles(AuthorizationPolicy::BettingAction { actor: Role::Alice }),
-            [Role::Bob]
-        );
+        assert!(roles(AuthorizationPolicy::BettingAction { actor: Role::Alice }).is_empty());
         assert_eq!(
             roles(AuthorizationPolicy::Timeout {
                 beneficiary: Role::Alice,
@@ -2620,13 +2622,10 @@ mod tests {
     }
 
     #[test]
-    fn betting_authorization_exchanges_only_the_opponent_signature() {
+    fn betting_authorization_is_selected_only_at_runtime() {
         for actor in [Role::Alice, Role::Bob] {
             let policy = AuthorizationPolicy::BettingAction { actor };
-            assert_eq!(
-                preauthorized_roles(policy).collect::<Vec<_>>(),
-                [actor.other()]
-            );
+            assert!(preauthorized_roles(policy).next().is_none());
             assert_eq!(runtime_signature_role_and_kind(policy), None);
         }
     }

@@ -2796,14 +2796,7 @@ mod tests {
                         Role::Bob => alice_preauthorizations += 1,
                     },
                     AuthorizationPolicy::AliceScore => bob_preauthorizations += 1,
-                    AuthorizationPolicy::BettingAction { actor } => match actor {
-                        Role::Alice => {
-                            bob_preauthorizations += 1;
-                        }
-                        Role::Bob => {
-                            alice_preauthorizations += 1;
-                        }
-                    },
+                    AuthorizationPolicy::BettingAction { .. } => {}
                     AuthorizationPolicy::BobLivePayout => {
                         alice_preauthorizations += 1;
                         bob_runtime_signatures += 1;
@@ -2867,7 +2860,7 @@ mod tests {
         assert_eq!(alice_preauthorizations, REFERENCE_ALICE_PREAUTHORIZATIONS);
         assert_eq!(bob_preauthorizations, REFERENCE_BOB_PREAUTHORIZATIONS);
         assert_eq!(
-            alice_preauthorizations + bob_preauthorizations,
+            alice_preauthorizations + bob_preauthorizations + action,
             REFERENCE_TRANSACTION_COUNT
         );
         assert_eq!(alice_runtime_signatures, REFERENCE_ALICE_RUNTIME_SIGNATURES);

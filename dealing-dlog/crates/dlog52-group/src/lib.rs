@@ -212,6 +212,18 @@ impl Encode for Ciphertext {
     }
 }
 
+/// Decode one canonical ciphertext, permitting identity components only when
+/// the surrounding protocol stage does.
+pub fn decode_ciphertext(
+    reader: &mut Reader<'_>,
+    allow_identity: bool,
+) -> Result<Ciphertext, GroupError> {
+    Ok(Ciphertext {
+        r: decode_point(reader, allow_identity)?,
+        s: decode_point(reader, allow_identity)?,
+    })
+}
+
 /// Public data for one contribution slot.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SlotPublic {
@@ -226,6 +238,18 @@ impl Encode for SlotPublic {
         encode_point(&self.commitment, out);
         self.ciphertext.encode(out);
     }
+}
+
+/// Decode one contribution slot with the original commitment and ciphertext-R
+/// nonidentity requirements.
+pub fn decode_slot_public(reader: &mut Reader<'_>) -> Result<SlotPublic, GroupError> {
+    Ok(SlotPublic {
+        commitment: decode_point(reader, false)?,
+        ciphertext: Ciphertext {
+            r: decode_point(reader, false)?,
+            s: decode_point(reader, true)?,
+        },
+    })
 }
 
 /// Create the public commitment and ciphertext for one opening.

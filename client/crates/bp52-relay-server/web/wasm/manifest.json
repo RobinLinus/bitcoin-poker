@@ -13,8 +13,8 @@
     {
       "name": "origin",
       "url": "/wasm/origin.wasm",
-      "sha256": "47670333ee51d868ab3aa5e024e8ad249eaa3cf9cd49bb3c05e8e1e63dd35b97",
-      "sizeBytes": 403215,
+      "sha256": "aa30cd1c9e556605646b78b26ad29a4750e0a376709135e30abf1313a471e9d1",
+      "sizeBytes": 403328,
       "securityBoundary": "origin-transaction-builder"
     },
     {
@@ -27,15 +27,22 @@
     {
       "name": "game",
       "url": "/wasm/game.wasm",
-      "sha256": "20cd9978fb6d643231cfb216c34089c2ee90ee122d8a35f35cae59cd0c1f168f",
-      "sizeBytes": 1603465,
+      "sha256": "9929428d220ff169dd98499d600dcbcf9ea388a0a584090f6ed2469df7013403",
+      "sizeBytes": 1603748,
       "securityBoundary": "public-game-reducer"
+    },
+    {
+      "name": "dlog52",
+      "url": "/wasm/dlog52.wasm",
+      "sha256": "46ea734308e6d5851893db2977947ee330e2ed899f99d39b4e80ec1ec1dede09",
+      "sizeBytes": 2062458,
+      "securityBoundary": "dlog52-secret-worker"
     },
     {
       "name": "chain",
       "url": "/wasm/chain.wasm",
-      "sha256": "deb8510a8b275fe36181db4fc5f737c60cb6ad157790315d5d3d7d22e24b79a2",
-      "sizeBytes": 2853053,
+      "sha256": "1352306d65f21469fbb6ea689438f29e79226a2771ebf89c0845e8fc5699a8e4",
+      "sizeBytes": 2807964,
       "securityBoundary": "chain-secret-worker"
     },
     {

@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#081510" />
     <meta
       name="description"
-      content="A private two-player Bitcoin poker table on a configured Bitcoin network."
+      content="A private two-player poker game with a fair, jointly shuffled deck."
     />
     <title>BP52 — Bitcoin Poker</title>
     <link rel="stylesheet" href="/styles.css" />
-    <script type="module" src="/app.js?v=13"></script>
+    <script type="module" src="/dlog52-game.js"></script>
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
@@ -19,7 +19,7 @@
         <span class="brand-mark">BP<span>/</span>52</span>
         <span class="brand-name">Bitcoin Poker</span>
       </div>
-      <div class="network-pill" title="Bitcoin network">
+      <div class="network-pill" title="Game mode">
         <span class="pulse-dot" aria-hidden="true"></span>
         <span id="deployment-name">Loading network…</span>
       </div>
@@ -28,23 +28,18 @@
     <main>
       <section id="lobby" class="lobby-shell">
         <div class="hero-copy">
-          <p class="eyebrow">Two-player poker · Bitcoin settlement</p>
-          <h1>Poker, settled<br />in Bitcoin.</h1>
+          <h1>Heads-up poker.</h1>
           <p class="hero-body">
-            Deal hidden cards together, play heads-up poker, and settle the result
-            directly in Bitcoin—without a dealer holding the pot.
+            A complete two-player game with a fair deck—no trusted dealer.
           </p>
-          <div class="principles" aria-label="Game features">
-            <span>2 players</span><span>52 cards</span><span>No dealer custody</span>
-          </div>
         </div>
 
         <div class="entry-card">
           <div class="entry-tabs" role="tablist" aria-label="Table entry">
-            <button id="create-tab" class="tab active" role="tab" aria-selected="true">
+            <button id="create-tab" class="tab active" role="tab" aria-selected="true" type="button">
               Create table
             </button>
-            <button id="join-tab" class="tab" role="tab" aria-selected="false">
+            <button id="join-tab" class="tab" role="tab" aria-selected="false" type="button">
               Join table
             </button>
           </div>
@@ -53,28 +48,27 @@
             <div class="entry-intro">
               <span class="card-glyph" aria-hidden="true">A♠</span>
               <div>
-                <h2>Open a private table</h2>
-                <p>You’ll get a one-time invite link for your opponent.</p>
+                <h2>Start a game</h2>
+                <p>You’ll get a private link for your opponent.</p>
               </div>
             </div>
             <div class="terms-preview">
               <div><span>Game</span><strong>Fixed-limit hold’em</strong></div>
-              <div><span>Network</span><strong id="deployment-network">Loading…</strong></div>
-              <div><span>Payout</span><strong>Direct Bitcoin settlement</strong></div>
+              <div><span>Stakes</span><strong>Practice chips</strong></div>
             </div>
             <button id="create-game" class="primary-button" type="button">
-              Create private table
+              Create table
               <span aria-hidden="true">→</span>
             </button>
-            <p class="fine-print">Test coins only. Mainnet is disabled.</p>
+            <p class="fine-print">Demo only—no real money is used.</p>
           </div>
 
           <div id="join-panel" class="entry-panel hidden" role="tabpanel">
             <div class="entry-intro">
               <span class="card-glyph red" aria-hidden="true">K♥</span>
               <div>
-                <h2>Take the other seat</h2>
-                <p>Paste the private invite link sent by the table creator.</p>
+                <h2>Join a game</h2>
+                <p>Open or paste the private link sent by the host.</p>
               </div>
             </div>
             <label class="field-label" for="invite-value">Private invite</label>
@@ -84,13 +78,13 @@
               type="text"
               spellcheck="false"
               autocomplete="off"
-              placeholder="https://…/#/join/…"
+              placeholder="Paste invite link"
             />
             <button id="join-game" class="primary-button" type="button">
               Join table
               <span aria-hidden="true">→</span>
             </button>
-            <p id="join-hint" class="fine-print">The invite grants access to one seat.</p>
+            <p id="join-hint" class="fine-print">The link can only fill one guest seat.</p>
           </div>
 
           <p id="lobby-error" class="error-message hidden" role="alert"></p>
@@ -99,7 +93,7 @@
 
       <section id="game" class="game-shell hidden" aria-label="Poker table">
         <div class="game-heading">
-          <h1>Private table</h1>
+          <h1>Heads-up table</h1>
         </div>
 
         <div class="game-layout">
@@ -144,13 +138,16 @@
                 </span>
               </div>
 
-              <div class="table-message">
+              <div id="table-message" class="table-message">
                 <div role="status" aria-live="polite" aria-atomic="true">
                   <span id="table-phase">Waiting for opponent</span>
                   <small id="table-detail">Share the private link to fill the table.</small>
                 </div>
                 <button id="broadcast-refund" class="secondary-button table-primary-action hidden" type="button" disabled>
                   Return funds
+                </button>
+                <button id="next-hand" class="secondary-button table-primary-action hidden" type="button">
+                  Next hand
                 </button>
               </div>
 
@@ -200,7 +197,7 @@
               <div class="seat seat-local">
                 <div class="avatar local" id="local-avatar">H</div>
                 <div class="seat-copy">
-                  <strong id="local-name">You · Host</strong>
+                  <strong id="local-name">You</strong>
                   <span id="local-stack" class="seat-stack">Stack · —</span>
                 </div>
                 <span id="local-blind" class="blind-marker hidden" aria-label="Your blind"></span>

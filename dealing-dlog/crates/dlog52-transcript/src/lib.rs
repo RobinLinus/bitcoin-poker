@@ -31,8 +31,7 @@ pub fn hash_scalar(label: &str, body: &[u8]) -> Result<Scalar, ChallengeExhauste
         put_u32(&mut framed, counter);
         let digest = tagged_hash("DLOG52/challenge/v1", &framed);
         let candidate = Scalar::from_repr(FieldBytes::from(digest));
-        if bool::from(candidate.is_some()) {
-            let scalar = candidate.unwrap();
+        if let Some(scalar) = Option::<Scalar>::from(candidate) {
             if !bool::from(scalar.is_zero()) {
                 return Ok(scalar);
             }
@@ -42,6 +41,7 @@ pub fn hash_scalar(label: &str, body: &[u8]) -> Result<Scalar, ChallengeExhauste
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -7,8 +7,16 @@ license.workspace = true
 
 [dependencies]
 bitcoin.workspace = true
+dlog52-group = { path = "../dlog52-group" }
 dlog52-protocol = { path = "../dlog52-protocol" }
+k256.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+dlog52-codec = { path = "../dlog52-codec" }
+dlog52-openings = { path = "../dlog52-openings" }
+rand_chacha.workspace = true
 
 [lints]
 workspace = true

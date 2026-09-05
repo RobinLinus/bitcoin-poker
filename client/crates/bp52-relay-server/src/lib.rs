@@ -131,6 +131,7 @@ impl RelayServer {
             .route("/wasm/wallet.wasm", get(wallet_wasm))
             .route("/wasm/origin.wasm", get(origin_wasm))
             .route("/wasm/deal.wasm", get(deal_wasm))
+            .route("/wasm/dlog52.wasm", get(dlog52_wasm))
             .route("/wasm/game.wasm", get(game_wasm))
             .route("/wasm/chain.wasm", get(chain_wasm))
             .route("/wasm/transaction.wasm", get(transaction_wasm))
@@ -164,6 +165,14 @@ impl RelayServer {
             .route("/browser/deal/deal-runtime.js", get(deal_runtime_script))
             .route("/browser/deal/deal-worker.js", get(deal_worker_script))
             .route(
+                "/browser/deal/dlog52-runtime.js",
+                get(dlog52_runtime_script),
+            )
+            .route("/browser/deal/dlog52-worker.js", get(dlog52_worker_script))
+            .route("/dlog52", get(dlog52_page))
+            .route("/dlog52-demo.js", get(dlog52_demo_script))
+            .route("/dlog52-game.js", get(dlog52_game_script))
+            .route(
                 "/browser/deal/proof-schedule.js",
                 get(deal_proof_schedule_script),
             )
@@ -173,6 +182,10 @@ impl RelayServer {
             )
             .route("/browser/game/game-runtime.js", get(game_runtime_script))
             .route("/browser/game/game-worker.js", get(game_worker_script))
+            .route(
+                "/browser/game/offchain-ratchet.js",
+                get(offchain_ratchet_script),
+            )
             .route("/browser/chain/chain-runtime.js", get(chain_runtime_script))
             .route("/browser/chain/chain-worker.js", get(chain_worker_script))
             .route("/browser/chain/chain-client.js", get(chain_client_script))
@@ -727,6 +740,10 @@ async fn deal_wasm() -> impl IntoResponse {
     wasm_asset(include_bytes!("../web/wasm/deal.wasm"))
 }
 
+async fn dlog52_wasm() -> impl IntoResponse {
+    wasm_asset(include_bytes!("../web/wasm/dlog52.wasm"))
+}
+
 async fn game_wasm() -> impl IntoResponse {
     wasm_asset(include_bytes!("../web/wasm/game.wasm"))
 }
@@ -889,6 +906,56 @@ async fn deal_worker_script() -> impl IntoResponse {
     )
 }
 
+async fn dlog52_runtime_script() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/javascript; charset=utf-8"),
+        )],
+        include_str!("../../../browser/deal/dlog52-runtime.js"),
+    )
+}
+
+async fn dlog52_worker_script() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/javascript; charset=utf-8"),
+        )],
+        include_str!("../../../browser/deal/dlog52-worker.js"),
+    )
+}
+
+async fn dlog52_page() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        )],
+        include_str!("../web/dlog52.html"),
+    )
+}
+
+async fn dlog52_demo_script() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/javascript; charset=utf-8"),
+        )],
+        include_str!("../web/dlog52-demo.js"),
+    )
+}
+
+async fn dlog52_game_script() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/javascript; charset=utf-8"),
+        )],
+        include_str!("../web/dlog52-game.js"),
+    )
+}
+
 async fn deal_proof_schedule_script() -> impl IntoResponse {
     (
         [(
@@ -926,6 +993,16 @@ async fn game_worker_script() -> impl IntoResponse {
             HeaderValue::from_static("text/javascript; charset=utf-8"),
         )],
         include_str!("../../../browser/game/game-worker.js"),
+    )
+}
+
+async fn offchain_ratchet_script() -> impl IntoResponse {
+    (
+        [(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/javascript; charset=utf-8"),
+        )],
+        include_str!("../../../browser/game/offchain-ratchet.js"),
     )
 }
 

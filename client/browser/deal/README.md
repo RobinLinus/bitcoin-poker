@@ -1,5 +1,16 @@
 # Browser BP52 DEAL worker
 
+The shipped regtest UI now selects the DLOG52 implementation. Its raw module
+is `/wasm/dlog52.wasm`; `dlog52-runtime.js` and `dlog52-worker.js` expose the
+authenticated 16-envelope state machine, exact certificate replay, signed
+selective reveals, card-key signing, poker evaluation, and the nine canonical
+gate manifests. The root page uses the existing poker-table/card design and
+plays a full fixed-limit demonstration through showdown.
+
+The legacy `/wasm/deal.wasm` boundary documented below remains packaged only
+for compatibility tests. It is not silently mixed with DLOG52 or its gate-only
+Bitcoin profile.
+
 This directory runs the real `BP52-DEAL-v1` protocol in a dedicated Web
 Worker. It is not a browser substitute: every peer message is a canonical
 `bp52-codec` envelope and each attempt follows the fixed 16-envelope

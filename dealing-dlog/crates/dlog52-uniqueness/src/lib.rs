@@ -3,10 +3,11 @@
 
 use std::collections::HashSet;
 
-use dlog52_codec::Encode;
+use dlog52_codec::{Encode, Reader};
 use dlog52_group::{
     Ciphertext, N_SLOTS, RAW_SUM_CANDIDATES, SlotPublic, ZERO_TEST_COUNT, candidate_keys,
-    encode_point, encode_scalar, protocol_parameters, random_nonzero_scalar,
+    decode_ciphertext, decode_point, decode_scalar, encode_point, encode_scalar,
+    protocol_parameters, random_nonzero_scalar,
 };
 use dlog52_transcript::{hash_scalar, tagged_hash};
 use k256::{
@@ -164,11 +165,40 @@ impl Encode for ScaleRecord {
     }
 }
 
+/// Decode one canonical scaling record.
+pub fn decode_scale_record(reader: &mut Reader<'_>) -> Result<ScaleRecord, UniquenessError> {
+    Ok(ScaleRecord {
+        q: decode_point(reader, false).map_err(|_| UniquenessError::InvalidProof)?,
+        output: decode_ciphertext(reader, true).map_err(|_| UniquenessError::InvalidProof)?,
+        t_g: decode_point(reader, true).map_err(|_| UniquenessError::InvalidProof)?,
+        t_r: decode_point(reader, true).map_err(|_| UniquenessError::InvalidProof)?,
+        t_s: decode_point(reader, true).map_err(|_| UniquenessError::InvalidProof)?,
+        z: decode_scalar(reader).map_err(|_| UniquenessError::InvalidProof)?,
+    })
+}
+
 /// Exact 108-record scaling payload.
 #[derive(Clone)]
 pub struct ScalePayload {
     /// Canonically ordered records.
     pub records: Vec<ScaleRecord>,
+}
+
+impl Encode for ScalePayload {
+    fn encode(&self, out: &mut Vec<u8>) {
+        for record in &self.records {
+            record.encode(out);
+        }
+    }
+}
+
+/// Decode the exact fixed-shape 108-record scaling payload.
+pub fn decode_scale_payload(reader: &mut Reader<'_>) -> Result<ScalePayload, UniquenessError> {
+    let mut records = Vec::with_capacity(ZERO_TEST_COUNT);
+    for _ in 0..ZERO_TEST_COUNT {
+        records.push(decode_scale_record(reader)?);
+    }
+    Ok(ScalePayload { records })
 }
 
 fn scale_challenge(
@@ -270,6 +300,39 @@ pub struct DecryptionBody {
     pub temporaries: Vec<ProjectivePoint>,
     /// DLEQ response.
     pub z: Scalar,
+}
+
+impl Encode for DecryptionBody {
+    fn encode(&self, out: &mut Vec<u8>) {
+        for share in &self.shares {
+            encode_point(share, out);
+        }
+        encode_point(&self.t_g, out);
+        for temporary in &self.temporaries {
+            encode_point(temporary, out);
+        }
+        encode_scalar(&self.z, out);
+    }
+}
+
+/// Decode the exact fixed-shape batch decryption body.
+pub fn decode_decryption_body(reader: &mut Reader<'_>) -> Result<DecryptionBody, UniquenessError> {
+    let mut shares = Vec::with_capacity(ZERO_TEST_COUNT);
+    for _ in 0..ZERO_TEST_COUNT {
+        shares.push(decode_point(reader, false).map_err(|_| UniquenessError::InvalidProof)?);
+    }
+    let t_g = decode_point(reader, true).map_err(|_| UniquenessError::InvalidProof)?;
+    let mut temporaries = Vec::with_capacity(ZERO_TEST_COUNT);
+    for _ in 0..ZERO_TEST_COUNT {
+        temporaries.push(decode_point(reader, true).map_err(|_| UniquenessError::InvalidProof)?);
+    }
+    let z = decode_scalar(reader).map_err(|_| UniquenessError::InvalidProof)?;
+    Ok(DecryptionBody {
+        shares,
+        t_g,
+        temporaries,
+        z,
+    })
 }
 
 fn decrypt_challenge(

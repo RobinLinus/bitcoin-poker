@@ -265,6 +265,84 @@ pub fn build_action_witness(
     }
 }
 
+/// Build an exact betting-action witness from two just-in-time signatures.
+///
+/// This is the off-chain-channel counterpart of [`build_action_witness`]. It
+/// deliberately performs no preauthorization lookup: both signatures must be
+/// obtained only after the canonical ratchet selects this one child. The
+/// caller is responsible for enforcing one durable selection per parent; this
+/// function revalidates the graph edge, actor, digest, and both signatures.
+///
+/// # Errors
+///
+/// Rejects a missing/non-action edge, wrong actor, authorization mismatch, or
+/// either signature not covering the exact selected transaction.
+pub fn build_selected_action_witness(
+    graph: &dyn ChainBackend,
+    parent_node_id: NodeId,
+    child_node_id: NodeId,
+    action: Action,
+    actor: Role,
+    alice_signature: DefaultSighashSignature,
+    bob_signature: DefaultSighashSignature,
+) -> Result<Witness, RuntimeError> {
+    reject_mainnet(graph.network())?;
+    let edge = validate_exact_edge(graph, parent_node_id, EdgeKind::Action(action))?;
+    if edge.child.node_id != child_node_id
+        || edge.parent.node_kind != NodeKind::Betting
+        || edge.edge.authorization != (AuthorizationPolicy::BettingAction { actor })
+    {
+        return Err(RuntimeError::WrongAuthorization);
+    }
+    let digest = edge_sighash(graph, edge)?;
+    verify_signature(graph, Role::Alice, digest, alice_signature)?;
+    verify_signature(graph, Role::Bob, digest, bob_signature)?;
+    Ok(Witness::Action {
+        chain_game_id: graph.chain_game_id(),
+        node_id: parent_node_id,
+        child_node_id,
+        action,
+        alice_signature,
+        bob_signature,
+    })
+}
+
+/// Sign one exact betting edge after the off-chain ratchet selects it.
+///
+/// This is the narrow signing-oracle boundary used by each participant. It
+/// derives the digest from the authenticated graph and refuses arbitrary
+/// digests, endpoint substitutions, non-betting edges, or a claimed actor that
+/// differs from the graph policy. The signer implementation still enforces
+/// that `signer_role` is the locally held key.
+///
+/// # Errors
+///
+/// Rejects an unlisted/substituted edge, wrong actor or signer, external signer
+/// failure, or a signature that does not authorize the selected transaction.
+pub fn sign_selected_action(
+    graph: &dyn ChainBackend,
+    parent_node_id: NodeId,
+    child_node_id: NodeId,
+    action: Action,
+    actor: Role,
+    signer_role: Role,
+    signer: &dyn BitcoinSigner,
+) -> Result<DefaultSighashSignature, RuntimeError> {
+    reject_mainnet(graph.network())?;
+    let edge = validate_exact_edge(graph, parent_node_id, EdgeKind::Action(action))?;
+    if edge.child.node_id != child_node_id
+        || edge.parent.node_kind != NodeKind::Betting
+        || edge.edge.authorization != (AuthorizationPolicy::BettingAction { actor })
+    {
+        return Err(RuntimeError::WrongAuthorization);
+    }
+    let digest = edge_sighash(graph, edge)?;
+    let signature =
+        signer.sign_sighash_default(signer_role, parent_node_id, child_node_id, digest)?;
+    verify_signature(graph, signer_role, digest, signature)?;
+    Ok(signature)
+}
+
 /// Build the unique normal reveal witness at a deal/community reveal node.
 ///
 /// # Errors
@@ -1213,12 +1291,13 @@ mod tests {
 
     use super::{
         build_action_witness, build_advance_witness, build_alice_showdown_witness,
-        build_bob_payout_witness, build_reveal_witness, build_timeout_witness,
+        build_bob_payout_witness, build_reveal_witness, build_selected_action_witness,
+        build_timeout_witness, sign_selected_action,
     };
     use crate::{
         BitcoinSigner, ChainBackend, ChainMonitor, MonitorState, PublicPreimageStore, RuntimeError,
-        SecretEraser, SecretPreimageSource, SignerError, Witness, attach_timeout_witness,
-        attach_witness,
+        SecretEraser, SecretPreimageSource, SignerError, Witness, attach_offchain_witness,
+        attach_timeout_witness, attach_witness,
     };
 
     const GAME_ID: [u8; 32] = [9; 32];
@@ -2399,6 +2478,129 @@ mod tests {
             Err(RuntimeError::ConflictingActionAuthorization { node_id: PARENT_ID })
         ));
         assert_eq!(monitor.state(), MonitorState::Halted);
+        Ok(())
+    }
+
+    #[test]
+    fn selected_action_requires_both_exact_just_in_time_signatures()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (graph, _, _) = fixture()?;
+        let witness = build_selected_action_witness(
+            &graph,
+            PARENT_ID,
+            ACTION_CHILD_ID,
+            Action::Raise,
+            Role::Alice,
+            graph.signatures[0],
+            graph.signatures[1],
+        )?;
+        let prepared = attach_offchain_witness(&graph, PARENT_ID, &witness)?;
+        assert_eq!(prepared.endpoints(), (PARENT_ID, ACTION_CHILD_ID));
+        assert_eq!(prepared.template_txid(), graph.templates[0].1.txid());
+        assert_eq!(
+            prepared.transaction().compute_txid().to_byte_array(),
+            graph.templates[0].1.txid()
+        );
+        assert!(matches!(
+            build_selected_action_witness(
+                &graph,
+                PARENT_ID,
+                ACTION_CHILD_ID,
+                Action::Raise,
+                Role::Bob,
+                graph.signatures[0],
+                graph.signatures[1],
+            ),
+            Err(RuntimeError::WrongAuthorization)
+        ));
+        assert!(matches!(
+            build_selected_action_witness(
+                &graph,
+                PARENT_ID,
+                ACTION_CHILD_ID,
+                Action::Raise,
+                Role::Alice,
+                graph.signatures[1],
+                graph.signatures[1],
+            ),
+            Err(RuntimeError::Bitcoin(_))
+        ));
+        assert!(matches!(
+            attach_offchain_witness(&graph, TIMEOUT_CHILD_ID, &witness),
+            Err(RuntimeError::WrongAuthorization)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn selected_action_signer_never_accepts_an_arbitrary_or_sibling_digest()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (graph, alice_keypair, bob_keypair) = fixture()?;
+        let alice = TestSigner {
+            role: Role::Alice,
+            keypair: alice_keypair,
+            calls: Cell::new(0),
+        };
+        let bob = TestSigner {
+            role: Role::Bob,
+            keypair: bob_keypair,
+            calls: Cell::new(0),
+        };
+        let alice_signature = sign_selected_action(
+            &graph,
+            PARENT_ID,
+            ACTION_CHILD_ID,
+            Action::Raise,
+            Role::Alice,
+            Role::Alice,
+            &alice,
+        )?;
+        let bob_signature = sign_selected_action(
+            &graph,
+            PARENT_ID,
+            ACTION_CHILD_ID,
+            Action::Raise,
+            Role::Alice,
+            Role::Bob,
+            &bob,
+        )?;
+        assert_eq!([alice.calls.get(), bob.calls.get()], [1, 1]);
+        build_selected_action_witness(
+            &graph,
+            PARENT_ID,
+            ACTION_CHILD_ID,
+            Action::Raise,
+            Role::Alice,
+            alice_signature,
+            bob_signature,
+        )?;
+        assert!(matches!(
+            sign_selected_action(
+                &graph,
+                PARENT_ID,
+                TIMEOUT_CHILD_ID,
+                Action::Raise,
+                Role::Alice,
+                Role::Alice,
+                &alice,
+            ),
+            Err(RuntimeError::WrongAuthorization)
+                | Err(RuntimeError::MissingListedEdge { .. })
+                | Err(RuntimeError::EdgeNotFound { .. })
+        ));
+        assert!(matches!(
+            sign_selected_action(
+                &graph,
+                PARENT_ID,
+                ACTION_CHILD_ID,
+                Action::Raise,
+                Role::Bob,
+                Role::Alice,
+                &alice,
+            ),
+            Err(RuntimeError::WrongAuthorization)
+        ));
+        assert_eq!(alice.calls.get(), 1);
         Ok(())
     }
 

@@ -156,19 +156,19 @@ pub const HEADS_UP_FIXED_LIMIT_V1_PROFILE: HeadsUpFixedLimitV1Profile = HeadsUpP
     alice_button_inventory: HeadsUpInventory {
         alice_lamport_keys: 1,
         bob_lamport_keys: 1,
-        alice_preauthorizations: 155_640,
-        bob_preauthorizations: 63_787,
+        alice_preauthorizations: 24_877,
+        bob_preauthorizations: 14_671,
         alice_runtime_signatures: 8_930,
-        bob_runtime_signatures: 146_711,
+        bob_runtime_signatures: 24_239,
         deal_preimages_per_player: 9,
     },
     bob_button_inventory: HeadsUpInventory {
         alice_lamport_keys: 1,
         bob_lamport_keys: 1,
-        alice_preauthorizations: 155_641,
-        bob_preauthorizations: 63_786,
+        alice_preauthorizations: 24_877,
+        bob_preauthorizations: 14_671,
         alice_runtime_signatures: 8_930,
-        bob_runtime_signatures: 146_711,
+        bob_runtime_signatures: 24_239,
         deal_preimages_per_player: 9,
     },
 };
@@ -586,7 +586,7 @@ mod tests {
                                         "fixed-limit profile contains a both-presigned edge".into(),
                                     );
                                 }
-                                AuthorizationPolicy::BettingAction { actor } => actor.other(),
+                                AuthorizationPolicy::BettingAction { .. } => continue,
                                 AuthorizationPolicy::RevealPreimages { revealer } => {
                                     revealer.other()
                                 }
@@ -605,7 +605,16 @@ mod tests {
                             ]
                         );
                         assert_eq!(
-                            preauthorizations.into_iter().sum::<u32>(),
+                            preauthorizations.into_iter().sum::<u32>()
+                                + plan
+                                    .nodes
+                                    .iter()
+                                    .flat_map(|node| &node.edges)
+                                    .filter(|edge| matches!(
+                                        edge.authorization,
+                                        AuthorizationPolicy::BettingAction { .. }
+                                    ))
+                                    .count() as u32,
                             plan.transaction_count() as u32
                         );
                     }

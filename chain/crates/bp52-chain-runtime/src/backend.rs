@@ -412,6 +412,32 @@ pub fn attach_witness(
     prepare_transaction(graph, edge, witness)
 }
 
+/// Validate and attach a fully authorized non-timeout witness whose parent is
+/// the current durable off-chain ratchet head rather than a confirmed UTXO.
+///
+/// Confirmation is intentionally not fabricated here. The caller supplies the
+/// exact expected parent node from its authenticated hash chain, while this
+/// boundary rechecks all graph semantics, signatures, predicates, and the
+/// witness-independent transaction id. CSV timeout witnesses remain forbidden
+/// until the real chain monitor proves maturity.
+pub fn attach_offchain_witness(
+    graph: &dyn ChainBackend,
+    expected_parent_node_id: NodeId,
+    witness: &Witness,
+) -> Result<PreparedTransaction, RuntimeError> {
+    if witness.node_id() != expected_parent_node_id || matches!(witness, Witness::Timeout { .. }) {
+        return Err(RuntimeError::WrongAuthorization);
+    }
+    let edge = crate::builders::validate_witness_semantics(graph, witness)?;
+    if edge.parent.node_id != expected_parent_node_id {
+        return Err(RuntimeError::InactiveNode {
+            expected: expected_parent_node_id,
+            actual: edge.parent.node_id,
+        });
+    }
+    prepare_transaction(graph, edge, witness)
+}
+
 /// Validate and attach a timeout witness after its exact CSV maturity.
 ///
 /// The opaque [`MatureTimeout`] capability proves both that the witness spends

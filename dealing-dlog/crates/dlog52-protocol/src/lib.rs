@@ -1,6 +1,16 @@
 #![forbid(unsafe_code)]
 //! Typed construction and validation boundaries for DLOG52 setup objects.
 
+mod certificate;
+mod reveal;
+mod session;
+
+pub use certificate::{Envelope, SetupCertificate, verify_setup_certificate};
+pub use reveal::{
+    SignedShareReveal, VerifiedShareReveal, create_share_reveal, verify_share_reveal,
+};
+pub use session::{LiveParticipant, ParticipantSnapshot};
+
 use dlog52_codec::{Encode, put_u16, put_u32};
 use dlog52_group::{
     N_SLOTS, SlotPublic, create_slot, encode_point, protocol_parameters, random_contribution,
@@ -15,6 +25,7 @@ use dlog52_uniqueness::{UniquenessError, VerifiedCatalogue, derive_candidate_cat
 use k256::{
     ProjectivePoint, Scalar,
     elliptic_curve::{Group, sec1::ToEncodedPoint},
+    schnorr::{Signature, VerifyingKey},
 };
 use rand_core::{CryptoRng, RngCore};
 use thiserror::Error;
@@ -91,6 +102,43 @@ pub enum ProtocolError {
     /// Candidate screening failed.
     #[error("candidate catalogue screening failed: {0}")]
     Catalogue(#[from] UniquenessError),
+    /// An accepted descriptor disagrees with the fully verified attempt.
+    #[error("accepted deal descriptor mismatch")]
+    AcceptedDescriptor,
+    /// One of the detached accepted-deal identity signatures is invalid.
+    #[error("invalid accepted deal signature")]
+    AcceptedSignature,
+    /// Canonical wire decoding or a bounded-size check failed.
+    #[error("invalid canonical protocol encoding")]
+    Wire,
+    /// An authenticated message violated the stage machine.
+    #[error("invalid authenticated protocol stage")]
+    Stage,
+    /// A committed opening did not match its earlier commitment.
+    #[error("commitment opening mismatch")]
+    Commitment,
+    /// The uniqueness result requires a new attempt rather than acceptance.
+    #[error("deal contains a card collision")]
+    Collision,
+    /// A selective opening was malformed, unauthorized, or incorrectly signed.
+    #[error("invalid or unauthorized share reveal")]
+    Reveal,
+    /// An off-chain state commitment was malformed or incorrectly signed.
+    #[error("invalid off-chain state commitment")]
+    OffchainCommitment,
+}
+
+/// Domain-separated BIP340 digest for one application-level off-chain state.
+///
+/// The DLOG participant only signs a 32-byte canonical commitment produced by
+/// the public game reducer. Binding that commitment to the accepted DLOG game
+/// id prevents signatures from being replayed into another table or protocol.
+#[must_use]
+pub fn offchain_commitment_digest(game_id: &[u8; 32], commitment_hash: &[u8; 32]) -> [u8; 32] {
+    let mut body = [0_u8; 64];
+    body[..32].copy_from_slice(game_id);
+    body[32..].copy_from_slice(commitment_hash);
+    tagged_hash("BP52/offchain-state/v1", &body)
 }
 
 /// Validate identities and derive the game identifier.
@@ -463,6 +511,7 @@ pub struct AcceptedDeal {
 pub struct VerifiedAcceptedDeal {
     deal: AcceptedDeal,
     catalogue: VerifiedCatalogue,
+    game_config: GameConfig,
 }
 
 impl VerifiedAcceptedDeal {
@@ -476,6 +525,81 @@ impl VerifiedAcceptedDeal {
     pub const fn catalogue(&self) -> &VerifiedCatalogue {
         &self.catalogue
     }
+    /// Borrow the game configuration authenticated by certificate replay.
+    #[must_use]
+    pub const fn game_config(&self) -> &GameConfig {
+        &self.game_config
+    }
+}
+
+/// Finish an already verified live attempt and cross the chain-authoritative
+/// accepted-deal boundary.
+///
+/// The caller supplies bundles that have already crossed
+/// [`verify_player_bundle`] and the exact stage-8 transcript root produced by
+/// the live state machine. This function independently re-derives the game id,
+/// candidate catalogue, descriptor commitments, and both BIP340 signatures.
+/// Public certificate decoding must replay the same checks before calling this
+/// boundary; detached acceptance signatures alone are deliberately
+/// insufficient.
+///
+/// # Errors
+///
+/// Returns an error if the identities, proof-verified bundle roles,
+/// descriptor fields, re-derived catalogue, transcript root, or either BIP340
+/// signature disagree.
+pub fn finalize_verified_attempt(
+    config: &GameConfig,
+    bundle_a: &VerifiedBundle,
+    bundle_b: &VerifiedBundle,
+    verification_root: [u8; 32],
+    deal: AcceptedDeal,
+) -> Result<VerifiedAcceptedDeal, ProtocolError> {
+    let game_id = derive_game_id(config)?;
+    let a = bundle_a.as_bundle();
+    let b = bundle_b.as_bundle();
+    if a.role != Role::A || b.role != Role::B {
+        return Err(ProtocolError::Identity);
+    }
+    let catalogue = derive_candidate_keys(
+        &game_id,
+        deal.body.attempt,
+        (&config.identity_a, &config.identity_b),
+        bundle_a,
+        bundle_b,
+    )?;
+    let commitments_a = std::array::from_fn(|index| a.slots[index].commitment);
+    let commitments_b = std::array::from_fn(|index| b.slots[index].commitment);
+    if deal.body.version != PROTOCOL_VERSION
+        || deal.body.params_id != protocol_parameters().params_id
+        || deal.body.game_id != game_id
+        || deal.body.commitments_a != commitments_a
+        || deal.body.commitments_b != commitments_b
+        || deal.body.catalogue_hash != catalogue.hash
+        || deal.body.verification_root != verification_root
+    {
+        return Err(ProtocolError::AcceptedDescriptor);
+    }
+    let digest = accepted_body_hash(&deal.body);
+    verify_accepted_signature(&config.identity_a, &digest, &deal.signature_a)?;
+    verify_accepted_signature(&config.identity_b, &digest, &deal.signature_b)?;
+    Ok(VerifiedAcceptedDeal {
+        deal,
+        catalogue,
+        game_config: config.clone(),
+    })
+}
+
+fn verify_accepted_signature(
+    identity: &[u8; 32],
+    digest: &[u8; 32],
+    signature: &[u8; 64],
+) -> Result<(), ProtocolError> {
+    let key = VerifyingKey::from_bytes(identity).map_err(|_| ProtocolError::Identity)?;
+    let signature =
+        Signature::try_from(signature.as_slice()).map_err(|_| ProtocolError::AcceptedSignature)?;
+    key.verify_raw(digest, &signature)
+        .map_err(|_| ProtocolError::AcceptedSignature)
 }
 
 /// Return an x-only encoding for a nonidentity full point.

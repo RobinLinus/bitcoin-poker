@@ -13,6 +13,7 @@ dlog52-transcript = { path = "../dlog52-transcript" }
 dlog52-uniqueness = { path = "../dlog52-uniqueness" }
 k256.workspace = true
 rand_core.workspace = true
+rand_chacha.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 

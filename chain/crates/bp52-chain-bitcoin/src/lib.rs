@@ -3,6 +3,8 @@
 
 mod error;
 
+/// Regtest-only Taproot gates derived from a replay-verified DLOG52 deal.
+pub mod dlog52;
 /// Exact witness-assisted Tapscript implementation of five-card evaluation.
 pub mod eval5_script;
 /// Deterministic fee policies.

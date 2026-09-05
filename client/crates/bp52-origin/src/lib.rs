@@ -47,6 +47,8 @@ pub const REFUND_VALUE_PER_PARTICIPANT_SAT: u64 = 26_500;
 pub const REFUND_FEE_SAT: u64 = ORIGIN_VALUE_SAT - REFUND_VALUE_PER_PARTICIPANT_SAT * 2;
 /// Fee paid by the origin-to-gameplay-root activation transaction.
 pub const ACTIVATION_FEE_SAT: u64 = 500;
+/// Fee paid by a cooperative close that settles directly from the origin.
+pub const COOPERATIVE_CLOSE_FEE_SAT: u64 = 500;
 /// Exact value of the first gameplay state output.
 pub const GAMEPLAY_ROOT_VALUE_SAT: u64 = ORIGIN_VALUE_SAT - ACTIVATION_FEE_SAT;
 /// Default-relay minimum non-dust value for a native P2WSH output.
@@ -63,6 +65,7 @@ pub const MAX_SIGNED_REFUND_VBYTES: u64 = 201;
 const CONTEXT_TAG: &[u8] = b"BP52/origin-context/v1";
 const PACKAGE_TAG: &[u8] = b"BP52/origin-package/v1";
 const ACTIVATION_TAG: &[u8] = b"BP52/origin-activation/v1";
+const COOPERATIVE_CLOSE_TAG: &[u8] = b"BP52/origin-cooperative-close/v1";
 const NONCE_SHARE_COMMITMENT_TAG: &[u8] = b"BP52/client/session-nonce-commit/v1";
 const SESSION_NONCE_TAG: &[u8] = b"BP52/client/session-nonce/v1";
 const SIGHASH_ALL_BYTE: u8 = 1;
@@ -746,6 +749,67 @@ impl OriginPackage {
         })
     }
 
+    /// Build a cooperative settlement that spends the still-unpublished
+    /// origin directly to the two participant staging scripts.
+    ///
+    /// Payouts are supplied in canonical participant order and must consume
+    /// exactly the origin value less the fixed cooperative-close fee. This
+    /// path is intended for a mutually agreed terminal off-chain state: it
+    /// avoids publishing the activation and descendant gameplay graph.
+    ///
+    /// # Errors
+    ///
+    /// Rejects dust outputs, an overflowing or incorrect payout total, or an
+    /// internal serialization/signature-hash invariant failure.
+    pub fn cooperative_close(
+        &self,
+        payouts_sat: [u64; 2],
+    ) -> Result<CooperativeClosePackage, OriginError> {
+        let total = payouts_sat[0]
+            .checked_add(payouts_sat[1])
+            .ok_or(OriginError::InvalidCooperativeClosePayouts)?;
+        if total != ORIGIN_VALUE_SAT - COOPERATIVE_CLOSE_FEE_SAT
+            || payouts_sat
+                .iter()
+                .any(|value| *value < P2WSH_MIN_NON_DUST_SAT)
+        {
+            return Err(OriginError::InvalidCooperativeClosePayouts);
+        }
+        let input = InputTemplate {
+            outpoint: self.origin_outpoint(),
+            sequence: FINAL_SEQUENCE,
+        };
+        let outputs = core::array::from_fn(|index| OutputTemplate {
+            value_sat: payouts_sat[index],
+            script_pubkey: self.participants[index].staging_script_pubkey().to_vec(),
+        });
+        let unsigned_transaction =
+            serialize_transaction(core::slice::from_ref(&input), &outputs, None)?;
+        let txid = transaction_id(&unsigned_transaction);
+        let sighash = bip143_sighash(
+            core::slice::from_ref(&input),
+            &outputs,
+            0,
+            &self.origin_witness_script,
+            ORIGIN_VALUE_SAT,
+        )?;
+        let mut binding = Vec::with_capacity(32 + unsigned_transaction.len());
+        binding.extend_from_slice(&self.package_id);
+        binding.extend_from_slice(&unsigned_transaction);
+        let close_id = tagged_hash(COOPERATIVE_CLOSE_TAG, &binding);
+        Ok(CooperativeClosePackage {
+            origin_package_id: self.package_id,
+            participants: self.participants.clone(),
+            origin_witness_script: self.origin_witness_script.clone(),
+            input,
+            outputs,
+            unsigned_transaction,
+            txid,
+            sighash,
+            close_id,
+        })
+    }
+
     /// Consensus serialization of the unsigned fair-refund transaction.
     #[must_use]
     pub fn unsigned_refund_bytes(&self) -> Vec<u8> {
@@ -917,6 +981,117 @@ pub struct ActivationPackage {
     activation_id: [u8; 32],
 }
 
+/// Exact direct settlement of the jointly controlled origin output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CooperativeClosePackage {
+    origin_package_id: [u8; 32],
+    participants: [StagingInput; 2],
+    origin_witness_script: Vec<u8>,
+    input: InputTemplate,
+    outputs: [OutputTemplate; 2],
+    unsigned_transaction: Vec<u8>,
+    txid: Txid,
+    sighash: [u8; 32],
+    close_id: [u8; 32],
+}
+
+impl CooperativeClosePackage {
+    /// Identifier of the origin package this close spends.
+    #[must_use]
+    pub const fn origin_package_id(&self) -> [u8; 32] {
+        self.origin_package_id
+    }
+
+    /// Context- and payout-bound cooperative-close identifier.
+    #[must_use]
+    pub const fn close_id(&self) -> [u8; 32] {
+        self.close_id
+    }
+
+    /// Canonical payouts in participant order.
+    #[must_use]
+    pub fn payouts_sat(&self) -> [u64; 2] {
+        self.outputs.clone().map(|output| output.value_sat)
+    }
+
+    /// Consensus serialization without witnesses.
+    #[must_use]
+    pub fn unsigned_transaction_bytes(&self) -> &[u8] {
+        &self.unsigned_transaction
+    }
+
+    /// Witness-independent close transaction identifier.
+    #[must_use]
+    pub const fn txid(&self) -> Txid {
+        self.txid
+    }
+
+    /// Shared BIP143 `SIGHASH_ALL` digest signed by both participants.
+    #[must_use]
+    pub const fn sighash(&self) -> [u8; 32] {
+        self.sighash
+    }
+
+    /// Verify one participant's signature over this exact close.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an unknown participant or invalid signature.
+    pub fn verify_signature(&self, share: SignatureShare) -> Result<(), OriginError> {
+        let index = self
+            .participants
+            .iter()
+            .position(|participant| participant.participant_id == share.signer)
+            .ok_or(OriginError::UnknownSigner)?;
+        verify_signature(
+            self.participants[index].compressed_public_key,
+            self.sighash,
+            share.signature,
+        )
+    }
+
+    /// Verify both signatures and assemble the direct close transaction.
+    ///
+    /// # Errors
+    ///
+    /// Rejects duplicate, missing, unknown, or invalid signatures and any
+    /// internal serialization invariant failure.
+    pub fn assemble_signed(
+        &self,
+        shares: [SignatureShare; 2],
+    ) -> Result<SignedTransaction, OriginError> {
+        if shares[0].signer == shares[1].signer {
+            return Err(OriginError::DuplicateSignature);
+        }
+        let mut ordered: [Option<SignatureShare>; 2] = [None, None];
+        for share in shares {
+            let index = self
+                .participants
+                .iter()
+                .position(|participant| participant.participant_id == share.signer)
+                .ok_or(OriginError::UnknownSigner)?;
+            self.verify_signature(share)?;
+            ordered[index] = Some(share);
+        }
+        let [Some(first), Some(second)] = ordered else {
+            return Err(OriginError::MissingSignature);
+        };
+        let witnesses = [vec![
+            signature_with_sighash_byte(second.signature)?,
+            signature_with_sighash_byte(first.signature)?,
+            self.origin_witness_script.clone(),
+        ]];
+        Ok(SignedTransaction {
+            consensus_bytes: serialize_transaction(
+                core::slice::from_ref(&self.input),
+                &self.outputs,
+                Some(&witnesses),
+            )?,
+            txid: self.txid,
+        })
+    }
+}
+
 impl ActivationPackage {
     /// Identifier of the origin/refund package this activation spends.
     #[must_use]
@@ -1076,6 +1251,11 @@ pub enum OriginError {
     /// Gameplay root is not a canonical P2TR scriptPubKey.
     #[error("gameplay root must be a canonical 34-byte P2TR scriptPubKey")]
     InvalidGameplayRootScript,
+    /// Cooperative payouts are dusty or do not consume the exact close value.
+    #[error(
+        "cooperative-close payouts must be non-dust and sum to the exact origin value less fee"
+    )]
+    InvalidCooperativeClosePayouts,
     /// Compact ECDSA scalar encoding is invalid.
     #[error("invalid compact ECDSA signature")]
     InvalidCompactSignature,
@@ -1326,8 +1506,8 @@ mod tests {
     use k256::ecdsa::{Signature, SigningKey, signature::hazmat::PrehashSigner};
 
     use super::{
-        ACTIVATION_FEE_SAT, CONTRIBUTION_SAT, CompactSignature, FUNDING_FEE_SAT,
-        GAMEPLAY_ROOT_VALUE_SAT, MAX_MONEY_SAT, MAX_SIGNED_FUNDING_VBYTES,
+        ACTIVATION_FEE_SAT, CONTRIBUTION_SAT, COOPERATIVE_CLOSE_FEE_SAT, CompactSignature,
+        FUNDING_FEE_SAT, GAMEPLAY_ROOT_VALUE_SAT, MAX_MONEY_SAT, MAX_SIGNED_FUNDING_VBYTES,
         MAX_SIGNED_REFUND_VBYTES, NonceSeat, ORIGIN_VALUE_SAT, OriginContext, OriginError,
         OriginPackage, OutPoint, ParticipantId, REFUND_DELAY_BLOCKS, REFUND_FEE_SAT,
         REFUND_VALUE_PER_PARTICIPANT_SAT, SignatureShare, StagingInput, Txid,
@@ -1497,6 +1677,62 @@ mod tests {
         assert_eq!(
             substituted.verify_signature(sign(&first_key, activation.sighash())?),
             Err(OriginError::InvalidSignature)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cooperative_close_is_direct_exact_and_fully_authorized() -> TestResult {
+        let (package, first_key, second_key) = fixture()?;
+        let close = package.cooperative_close([30_000, 23_000])?;
+        assert_eq!(close.payouts_sat(), [30_000, 23_000]);
+        assert_eq!(close.origin_package_id(), package.package_id());
+        let transaction = decode(close.unsigned_transaction_bytes())?;
+        assert_eq!(transaction.input.len(), 1);
+        assert_eq!(transaction.output.len(), 2);
+        assert_eq!(transaction.input[0].previous_output.vout, 0);
+        assert_eq!(
+            transaction.input[0].previous_output.txid.to_string(),
+            package.funding_txid().to_string()
+        );
+        assert_eq!(transaction.input[0].sequence.to_consensus_u32(), u32::MAX);
+        assert_eq!(
+            transaction
+                .output
+                .iter()
+                .map(|output| output.value.to_sat())
+                .sum::<u64>(),
+            ORIGIN_VALUE_SAT - COOPERATIVE_CLOSE_FEE_SAT
+        );
+        let expected = SighashCache::new(&transaction).p2wsh_signature_hash(
+            0,
+            &ScriptBuf::from_bytes(package.origin_witness_script().to_vec()),
+            Amount::from_sat(ORIGIN_VALUE_SAT),
+            EcdsaSighashType::All,
+        )?;
+        assert_eq!(expected.to_byte_array(), close.sighash());
+        let signed = close.assemble_signed([
+            sign(&first_key, close.sighash())?,
+            sign(&second_key, close.sighash())?,
+        ])?;
+        let signed_transaction = decode(signed.consensus_bytes())?;
+        assert_eq!(
+            signed_transaction.compute_txid().to_string(),
+            close.txid().to_string()
+        );
+        assert_eq!(signed_transaction.input[0].witness.len(), 3);
+        assert_eq!(
+            signed_transaction.input[0].witness.nth(2),
+            Some(package.origin_witness_script())
+        );
+
+        assert_eq!(
+            package.cooperative_close([30_001, 23_000]),
+            Err(OriginError::InvalidCooperativeClosePayouts)
+        );
+        assert_eq!(
+            package.cooperative_close([329, 52_671]),
+            Err(OriginError::InvalidCooperativeClosePayouts)
         );
         Ok(())
     }

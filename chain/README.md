@@ -82,16 +82,16 @@ schedule, and `origin_output`, `gameplay_root_output`, and `activation_template`
 produce or expose the exact outputs and canonical activation transaction. The
 profile also exposes role-indexed inventory accessors. This graph requires
 5,103 Lamport score keys and all nine local deal-share preimages from each
-player. For an Alice-button hand, Alice and Bob respectively contribute
-33,168 and 22,963 fixed preauthorizations; for a Bob-button hand the counts are
-33,169 and 22,962. Exactly one 64-byte signature authorizes each possible
-gameplay transaction, for 3,592,384 bytes across both roles. In the checked-in
-Alice-button deployment, Alice stores Bob's 1,469,632-byte peer vector and Bob
-stores Alice's 2,122,752-byte peer vector. Reversing the button changes those
-sizes by one signature to 1,469,568 and 2,122,816 bytes. The local vector is
-never retained because its selected signature can be re-derived on demand.
-`inventory(button)` returns the exact values, and the streaming profile check
-validates them before activation.
+player. Each button position requires 24,877 Alice and 14,671 Bob fixed
+preauthorizations (2,531,072 bytes total). Alice stores Bob's 938,944-byte peer
+vector and Bob stores Alice's 1,592,128-byte peer vector. These cover only
+unique progression, predicate-guarded reveal/payout, and timeout edges. The
+16,583 mutually exclusive betting edges are deliberately absent: the acting
+player and counterparty sign only the exact child selected by the live
+off-chain ratchet. Exchanging every sibling signature during setup would let a
+player publish a move that was never agreed. `inventory(button)` returns the
+exact safe values, and the exhaustive streaming profile check validates them
+before activation.
 
 Every timeout uses two transaction signatures over the same fixed template:
 the defaulting player exchanges a preauthorization before activation, while
