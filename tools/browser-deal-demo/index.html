@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DLOG52 Browser E2E</title>
+  <link rel="stylesheet" href="/src/ui/styles.css">
+  <script type="module" src="/tools/deal/main.js"></script>
+</head>
+<body>
+  <main class="lobby-shell" style="max-width:900px;margin:4rem auto;display:block">
+    <section class="entry-card">
+      <p class="eyebrow">DLOG52 · browser Worker E2E</p>
+      <h1 style="font-size:2.5rem">Provable deal. Complete game.</h1>
+      <p>This local two-seat harness runs each player in a separate secret-owning Web Worker, verifies the canonical certificate, derives all nine regtest gate leaves, and plays through showdown.</p>
+      <button id="run" class="primary-button" type="button">Deal and play</button>
+      <p id="status" role="status" aria-live="polite">Ready.</p>
+      <pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+      <p class="fine-print">The harness does not claim a full Bitcoin settlement graph. Private openings are passed locally for this E2E; production remote play requires a separately reviewed authenticated confidential channel.</p>
+    </section>
+  </main>
+</body>
+</html>

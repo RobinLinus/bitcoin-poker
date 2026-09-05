@@ -1,0 +1,23 @@
+[package]
+name = "dealer-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+poker-eval.workspace = true
+bitcoin.workspace = true
+dealer-codec.workspace = true
+dealer-bitcoin.workspace = true
+dealer-group.workspace = true
+dealer-openings.workspace = true
+dealer-proofs.workspace = true
+dealer-protocol.workspace = true
+dealer-uniqueness.workspace = true
+getrandom = { version = "=0.2.17", features = ["custom"] }
+k256 = { workspace = true, features = ["hash2curve", "schnorr", "std"] }
+rand_chacha.workspace = true

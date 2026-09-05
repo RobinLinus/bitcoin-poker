@@ -1,9 +1,4 @@
 **/.DS_Store
 /target/
-/dealing-dlog/target/
-/chain/target/
-/client/target/
-/client/.bp52/
-/client-cli/target/
-/client-cli/.bp52/
+**/.bp52/
 **/*.profraw

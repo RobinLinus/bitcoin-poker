@@ -1,0 +1,29 @@
+[package]
+name = "poker-transaction-wasm"
+publish = false
+description = "Raw WebAssembly boundary for canonical Bitcoin transaction inspection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bitcoin = { version = "=0.32.102", default-features = false, features = ["std"] }
+poker-client-ports.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints.rust]
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

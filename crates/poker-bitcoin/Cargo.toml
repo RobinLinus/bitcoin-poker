@@ -1,0 +1,27 @@
+[package]
+name = "poker-bitcoin"
+publish = false
+description = "Deterministic Bitcoin transaction and predicate backend for BP52-CHAIN-v1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+poker-settlement-types.workspace = true
+poker-score-ots.workspace = true
+poker-eval.workspace = true
+dealer-bitcoin.workspace = true
+dealer-protocol.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+poker-core-test-support.workspace = true
+rand_core.workspace = true
+k256 = { version = "=0.13.4", default-features = false, features = ["schnorr", "std"] }
+dealer-openings.workspace = true
+[lints]
+workspace = true

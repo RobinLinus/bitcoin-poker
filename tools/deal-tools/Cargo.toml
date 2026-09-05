@@ -1,0 +1,26 @@
+[package]
+name = "deal-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+dealer-codec.workspace = true
+dealer-group.workspace = true
+dealer-proofs.workspace = true
+dealer-uniqueness.workspace = true
+hex.workspace = true
+k256 = { workspace = true, features = ["hash2curve", "schnorr", "std"] }
+rand_chacha.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "deal-params"
+path = "src/main.rs"
+
+[[bin]]
+name = "deal-benchmark"
+path = "src/bin/benchmark.rs"

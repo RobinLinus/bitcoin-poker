@@ -1,25 +1,27 @@
 # Bitcoin Poker
 
-Private poker using dlog dealing and a finite Bitcoin settlement graph.
-The hash-based dealing implementation and its applications have been removed.
+Private dealing and on-chain poker settlement, with a browser practice table.
 
-- [`dealing-dlog/`](dealing-dlog/) implements private dealing, selective openings, and card signatures.
-- [`chain/`](chain/) implements the full poker graph, transaction preparation, on-chain reveals, showdown, and timeout settlement. It also owns the shared binary codec.
-- [`client/`](client/) contains the dlog practice table, relay, and reusable wallet/origin infrastructure.
-- [`client-cli/`](client-cli/) contains reusable native storage, transport, and Esplora libraries; there is currently no playable CLI executable.
+- `crates/dealer-*`: the cryptographic dealing protocol, selective openings, card signatures, and Wasm bindings.
+- `crates/poker-*`: poker evaluation, the full settlement graph, Bitcoin scripts, funding utilities, and client adapters.
+- `apps/relay`: the opaque message relay and static asset server.
+- `apps/web`: the browser application; its current mode is practice play.
+- `tools`: protocol diagnostics and benchmarks.
 
-The native dlog on-chain backbone is implemented. Funded browser integration,
-durable game recovery, and MutinyNet deployment remain unfinished. See the
-[implementation status](client/docs/DLOG_ONCHAIN_IMPLEMENTATION.md) and
-[MVP plan](client/docs/DLOG_MUTINYNET_MVP_PLAN.md).
+The native on-chain backbone is implemented and qualified against Bitcoin Core.
+Funded browser integration, durable game recovery, and MutinyNet deployment are
+still pending. Cooperative play is a later optimization of on-chain settlement.
 
-Run `cargo test --workspace --locked` from each workspace, and
-`node client/scripts/test-browser.mjs` from the repository root.
-Run `chain/scripts/bitcoin-core-regtest.sh --docker --suite dlog --require`
-for isolated Bitcoin Core qualification using a cached Core image.
+```sh
+cargo test --workspace --locked
+node scripts/test-browser.mjs
+cargo run -p poker-relay -- /tmp/poker.sqlite 127.0.0.1:3000 deployments/mutinynet/client.json
+```
 
-Keep all four workspaces together: they share path dependencies.
-`scripts/check-source-integrity.sh` verifies the locked dependency graphs;
-`--archive-smoke` checks the committed HEAD archive instead of local edits.
+Open `http://127.0.0.1:3000` for the practice table. The deployment config names
+the diagnostic network; it does not enable funded play or broadcasting.
 
-This is experimental test-network software. See [SECURITY.md](SECURITY.md).
+Start with [development](docs/development.md), [architecture](docs/architecture.md),
+[testing](docs/testing.md), and [current status](docs/status.md).
+The [roadmap](docs/roadmap.md) tracks the on-chain MVP. See [security](SECURITY.md)
+for the project's experimental scope.

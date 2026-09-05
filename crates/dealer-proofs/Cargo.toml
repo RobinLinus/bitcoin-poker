@@ -1,0 +1,22 @@
+[package]
+name = "dealer-proofs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+dealer-codec.workspace = true
+dealer-group.workspace = true
+dealer-transcript.workspace = true
+k256 = { workspace = true, features = ["hash2curve", "schnorr", "std"] }
+rand_core.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rand_chacha.workspace = true

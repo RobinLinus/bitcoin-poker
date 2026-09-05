@@ -1,0 +1,10 @@
+{
+  "name": "poker-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node ../../scripts/test-browser.mjs",
+    "test:deal": "node tests/deal-e2e.mjs",
+    "wasm:check": "node ../../scripts/package-browser-wasm.mjs --check"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "target": "wasm32-unknown-unknown",
+  "profile": "release",
+  "artifacts": [
+    {
+      "name": "wallet",
+      "url": "/wasm/wallet.wasm",
+      "sha256": "dfe2f07616a784aeb0a8f7ed9543fcab36bd4dd8692c7b8313f84470ad30520f",
+      "sizeBytes": 170035,
+      "securityBoundary": "wallet-local-signer"
+    },
+    {
+      "name": "origin",
+      "url": "/wasm/origin.wasm",
+      "sha256": "091b17ba8eed4db13ce57ccc29f889bdbff5dfc955f7a80290f6d5902a8fcfdd",
+      "sizeBytes": 403657,
+      "securityBoundary": "origin-transaction-builder"
+    },
+    {
+      "name": "dealer",
+      "url": "/wasm/dealer.wasm",
+      "sha256": "9c57e4c144c512a62381c4db8483414a449805779224666dbeea5f0623e56305",
+      "sizeBytes": 2060238,
+      "securityBoundary": "dealer-secret-worker"
+    },
+    {
+      "name": "transaction",
+      "url": "/wasm/transaction.wasm",
+      "sha256": "06a322787e8ca10890b566f9cc589b12acb0128a9db339286469766001067e25",
+      "sizeBytes": 115436,
+      "securityBoundary": "transaction-inspector"
+    }
+  ]
+}

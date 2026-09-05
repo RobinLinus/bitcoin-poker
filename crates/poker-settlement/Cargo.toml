@@ -1,0 +1,31 @@
+[package]
+name = "poker-settlement"
+publish = false
+description = "Literal transaction-tree compiler for BP52-CHAIN-v1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+poker-bitcoin.workspace = true
+poker-settlement-types.workspace = true
+poker-codec.workspace = true
+poker-score-ots.workspace = true
+poker-eval.workspace = true
+dealer-protocol.workspace = true
+dealer-bitcoin.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+k256 = { version = "=0.13.4", default-features = false, features = ["schnorr", "std"] }
+dealer-openings.workspace = true
+poker-core-test-support.workspace = true
+rand_core.workspace = true
+
+[lints]
+workspace = true

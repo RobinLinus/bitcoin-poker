@@ -1,11 +1,10 @@
 # Security
 
-This is experimental dlog poker software for test networks. The protocol and
-on-chain adaptor reveal extension have not received an independent audit.
-Mainnet deployment is unsupported. The browser currently provides practice play;
-funded dlog browser integration and durable recovery remain unfinished.
+Experimental test-network software. The dealer protocol and on-chain adaptor
+reveal extension have not received an independent cryptographic audit. Mainnet
+construction is unsupported. The browser provides practice play; funded browser
+integration and durable game recovery remain unfinished.
 
-Never publish wallet seeds, dealing secrets, or private recovery files in issue
-reports. Report reproducible problems with sanitized logs and test-network data.
-See [implementation status](client/docs/DLOG_ONCHAIN_IMPLEMENTATION.md) for the
-qualification performed and remaining deployment work.
+Do not publish wallet seeds, dealing secrets, relay capabilities, or private
+recovery files in issue reports. SQLite provides durability, not encryption.
+See [current status](docs/status.md) for qualification and practical limits.

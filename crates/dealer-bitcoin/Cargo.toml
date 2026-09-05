@@ -1,0 +1,23 @@
+[package]
+name = "dealer-bitcoin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+dealer-group.workspace = true
+dealer-protocol.workspace = true
+k256 = { workspace = true, features = ["hash2curve", "schnorr", "std"] }
+sha2.workspace = true
+thiserror.workspace = true
+musig2 = { version = "=0.4.0", default-features = false, features = ["k256"] }
+
+[dev-dependencies]
+dealer-codec.workspace = true
+dealer-openings.workspace = true
+rand_chacha.workspace = true
+poker-core-test-support.workspace = true
+[lints]
+workspace = true

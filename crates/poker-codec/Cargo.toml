@@ -1,0 +1,15 @@
+[package]
+name = "poker-codec"
+publish = false
+description = "Canonical bounded wire codec for shared poker protocols"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

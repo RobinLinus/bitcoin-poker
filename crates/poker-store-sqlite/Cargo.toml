@@ -1,0 +1,17 @@
+[package]
+name = "poker-store-sqlite"
+publish = false
+description = "Transactional SQLite session store for the BP52 client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+poker-client-ports.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
