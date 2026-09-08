@@ -24,6 +24,7 @@ fn complete_dlog_reference_topology_and_binding() -> TestResult {
 fn run() -> TestResult {
     let fees = ClassFeePolicy::new(500, 700, 11_000, 12_000, 500, 330)?;
     let parameters = SettlementConfig {
+        predeal_anchor: None,
         network: Network::Regtest,
         network_id: bitcoin::blockdata::constants::genesis_block(Network::Regtest)
             .block_hash()

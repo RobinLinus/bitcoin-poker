@@ -267,6 +267,12 @@ impl LogicalGraphPlan {
     }
 }
 
+// Path identity deliberately excludes accounting. The hand context commits the
+// static rules; exact economics are checked separately and signed in payouts.
+fn path_node_id(parent: &NodeId, edge: EdgeKind) -> NodeId {
+    child_node_id(parent, edge, &[0; 32])
+}
+
 /// Shared complete poker topology; callers must authenticate the profile ID.
 pub(crate) fn compile_rules_graph(
     rules: &PokerRules,
@@ -951,7 +957,7 @@ impl<'a> GraphBuilder<'a> {
             timeout.validate()?;
         }
         let logical_state_digest = planned_state_digest(&state)?;
-        let node_id = child_node_id(&parent_node_id, incoming_kind, &logical_state_digest);
+        let node_id = path_node_id(&parent_node_id, incoming_kind);
         self.insert_node_id(node_id)?;
         let node_kind = state.node_kind();
         let index = self.nodes.len();
@@ -1193,3 +1199,8 @@ use verify::{verify_plan, verify_reserve_split, verify_rules_plan};
 
 mod fees;
 use fees::exact_maximum_path_fee;
+
+/// Smallest reserve covering every reachable branch for these stacks and rules.
+pub fn required_fee_reserve(rules: &PokerRules, fees: &dyn FeePolicy) -> Result<u64, CompilerError> {
+    Ok(compile_rules_graph(rules, [1;32], fees)?.maximum_path_fee_sat)
+}

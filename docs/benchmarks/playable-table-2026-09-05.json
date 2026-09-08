@@ -1,0 +1,142 @@
+{
+  "ok": true,
+  "network": "mutinynet",
+  "page": "/",
+  "gameId": "7afcfc36f766781cc2776f9a722e1a81acf8ce6cac8bf448db1b00f077e07ec1",
+  "nodes": 56132,
+  "authorizationsPerPlayer": 56161,
+  "startingStacksSat": [
+    20000,
+    20000
+  ],
+  "csvBlocks": 12,
+  "manualActions": [
+    "host raise",
+    "guest call",
+    "guest flop bet",
+    "host call",
+    "guest turn check",
+    "host check",
+    "guest river check",
+    "host check"
+  ],
+  "automaticActions": [
+    "hole delivery",
+    "board reveals",
+    "Alice showdown",
+    "Bob showdown and payout"
+  ],
+  "board": [
+    "2c",
+    "9h",
+    "3s",
+    "Jc",
+    "8h"
+  ],
+  "hostCards": [
+    "5c",
+    "3d"
+  ],
+  "guestCards": [
+    "8s",
+    "5s"
+  ],
+  "winner": "guest",
+  "payoutsSat": [
+    31800,
+    33000
+  ],
+  "totalFeesSat": 68200,
+  "signingWasmSha256": "6a0e833f3d5f09832af073b10a18bf79e6a56198b938b3d1578cd784e56d4ba4",
+  "finalWasmSha256": "cf080d003af8466297365f3a047ec9ac5e93d8ee0d0180327fcc41a1dc47f753",
+  "recovery": [
+    "guest refreshed after submitting call",
+    "both seats reloaded during hand",
+    "older signing engine remained pinned",
+    "final engine independently replayed confirmed journal to display public showdown cards",
+    "both seats restored settled payouts and public cards after reload",
+    "guest New table returned to create/join lobby"
+  ],
+  "transactions": [
+    {
+      "height": 3402611,
+      "txid": "fdecd38880dd1778fcbc0ff68cea9574eec4ff1024b87dcb2dbea2cc0781cd21"
+    },
+    {
+      "height": 3402613,
+      "txid": "76851efc2c493b0eb51aeb5dc3185b95cc428e2e661fb0a865187ef1654587ad"
+    },
+    {
+      "height": 3402614,
+      "txid": "6b6226969c887ff948935eb1795347bcb34195afa78c2171392eb90ba4a5b4a0"
+    },
+    {
+      "height": 3402615,
+      "txid": "0ac726f1eefca2a77631e9e77b3abb6ddd6566727335eedb89f3026a5fec7bf9"
+    },
+    {
+      "height": 3402618,
+      "txid": "9a5cacf3639ba9046e781a23d35814b3844b6ffc32afba4e37f58ffd97a5de96"
+    },
+    {
+      "height": 3402624,
+      "txid": "d97a4586c56552adf302a00ab6663784998b489d0a850ecf1425913ea336e3d8"
+    },
+    {
+      "height": 3402625,
+      "txid": "b1b78dffaa7b897906919b065947a2ff67202637e88bde7482e012c20548d63f"
+    },
+    {
+      "height": 3402626,
+      "txid": "1010e15356352508f3e1f3a79ac97b9c42391561d621186605427d13367a66a7"
+    },
+    {
+      "height": 3402629,
+      "txid": "c1ddc6ff41915cb15966320293587f397b94eb7729135d1fdbe13ebcec4103a6"
+    },
+    {
+      "height": 3402634,
+      "txid": "9c3071fc64329d01b8e8aa11b3c96d0b5b564e6a47953ef6901bf84b0a5e771d"
+    },
+    {
+      "height": 3402635,
+      "txid": "ba43f3e7466d4015713c917b2d90ce1b74e87e7c688779419f8c51bc37ebd2b2"
+    },
+    {
+      "height": 3402636,
+      "txid": "5e646d3a528199f37f2f52399de2b37bf2e4082fb9325e0b26aa0b4858c34c16"
+    },
+    {
+      "height": 3402648,
+      "txid": "9baf61b03319f7d82aded5f4e7c0d5ccc6fb6be5761efcd48b9ba2465936628b"
+    },
+    {
+      "height": 3402651,
+      "txid": "3cd2a23a00d5337dfa1bfc66862f06d65746de1f915ceb9c6a6aa02b63b4847f"
+    },
+    {
+      "height": 3402652,
+      "txid": "1bfaa54b84d5f2bfa9fc045ce947a86fd89d623702348766489877b2c4512ac7"
+    },
+    {
+      "height": 3402653,
+      "txid": "29e2a7fe5354f3f80ebb8a79f3480f311682b9c6b0552eeeed2d8d27fe00f875"
+    },
+    {
+      "height": 3402993,
+      "txid": "b3f9a8bdb2f75f5785db18161053383dc5a04a2a28cdd5f5d47f2d1036a326a5"
+    },
+    {
+      "height": 3402997,
+      "txid": "11765e8cb4d471aaa57bdb2d5da505bd25851c3c1e197b2e2af13c44d31d2a0f"
+    },
+    {
+      "height": 3403025,
+      "txid": "91a13c37cf229d8f68527c6c6eb73db0df07b8b02ab1cbedf75aa118b1be4820"
+    },
+    {
+      "height": 3403026,
+      "txid": "f81de3f854f62dad865bd3a2b09324345d8d5d7d2a8b59383133c701e3fb57a9"
+    }
+  ]
+}

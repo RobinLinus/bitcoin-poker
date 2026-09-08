@@ -1,4 +1,5 @@
-const MANIFEST_URL = "/wasm/manifest.json";
+const ASSET_BASE = new URL(import.meta.url).pathname.match(/^\/assets\/[a-f0-9]{64}/)?.[0] ?? "";
+const MANIFEST_URL = `${ASSET_BASE}/wasm/manifest.json`;
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_WASM_BYTES = 16 * 1024 * 1024;
 const NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
@@ -38,7 +39,7 @@ async function boundedText(response, maximum, label) {
 
 async function loadManifest(fetchImplementation) {
   const response = await fetchImplementation(MANIFEST_URL, {
-    cache: "no-cache",
+    cache: ASSET_BASE ? "force-cache" : "no-cache",
     credentials: "same-origin",
     headers: { accept: "application/json" },
     redirect: "error",
@@ -87,21 +88,34 @@ async function verifiedBytes(name, fetchImplementation) {
   if (!NAME_PATTERN.test(name)) throw new Error("Wasm artifact name is malformed");
   const entry = (await manifest(fetchImplementation)).get(name);
   if (!entry) throw new Error(`Wasm artifact is absent from the manifest: ${name}`);
-  const response = await fetchImplementation(entry.url, {
-    cache: "no-cache",
+  const response = await artifactResponse(entry, fetchImplementation);
+  return verifyArtifactResponse(response, entry);
+}
+
+async function artifactResponse(entry, fetchImplementation) {
+  const options = {
+    cache: ASSET_BASE ? "force-cache" : "no-cache",
     credentials: "same-origin",
     headers: { accept: "application/wasm" },
     redirect: "error",
-  });
-  if (!response?.ok || response.redirected) {
-    throw new Error(`Wasm artifact request failed (${response?.status ?? "no response"}): ${name}`);
+  };
+  let response = await fetchImplementation(`${ASSET_BASE}${entry.url}`, options);
+  // A UI deployment retires the page's asset prefix. The current artifact can
+  // still be used ONLY if it matches this page's original manifest below.
+  if (ASSET_BASE && response?.status === 404 && !response.redirected) {
+    response = await fetchImplementation(entry.url, {...options, cache: "no-cache"});
   }
-  return verifyArtifactResponse(response, entry);
+  if (!response?.ok || response.redirected) {
+    throw new Error(`Wasm artifact request failed (${response?.status ?? "no response"}): ${entry.name}`);
+  }
+  return response;
 }
 
 async function verifyArtifactResponse(response, entry) {
   const declared = response.headers?.get?.("content-length");
-  if (declared !== null && declared !== undefined && Number(declared) !== entry.sizeBytes) {
+  // Fetch exposes decoded bytes; Content-Length describes the encoded transfer.
+  const encoding = response.headers?.get?.("content-encoding");
+  if ((!encoding || encoding === "identity") && declared !== null && declared !== undefined && Number(declared) !== entry.sizeBytes) {
     throw new Error(`Wasm artifact Content-Length differs from its manifest: ${entry.name}`);
   }
   const buffer = await response.arrayBuffer();
@@ -132,15 +146,7 @@ export async function instantiateWasm(name, imports = {}, options = {}) {
   if (!NAME_PATTERN.test(name)) throw new Error("Wasm artifact name is malformed");
   const entry = (await manifest(fetchImplementation)).get(name);
   if (!entry) throw new Error(`Wasm artifact is absent from the manifest: ${name}`);
-  const response = await fetchImplementation(entry.url, {
-    cache: "no-cache",
-    credentials: "same-origin",
-    headers: { accept: "application/wasm" },
-    redirect: "error",
-  });
-  if (!response?.ok || response.redirected) {
-    throw new Error(`Wasm artifact request failed (${response?.status ?? "no response"}): ${name}`);
-  }
+  const response = await artifactResponse(entry, fetchImplementation);
   const verifiedResponse = response.clone();
   await verifyArtifactResponse(response, entry);
   const result = await WebAssembly.instantiateStreaming(
@@ -151,3 +157,14 @@ export async function instantiateWasm(name, imports = {}, options = {}) {
 }
 
 export const wasmManifestUrl = MANIFEST_URL;
+
+/** Reconnect must not create workers under a retired deployment's URL prefix. */
+export async function appUpdateAvailable({fetchImplementation = globalThis.fetch, assetBase = ASSET_BASE} = {}) {
+  if (!assetBase) return false;
+  try {
+    const response = await fetchImplementation("/", {cache: "no-store", credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(3000)});
+    if (!response.ok || response.redirected) return false;
+    const current = (await response.text()).match(/data-asset-base="(\/assets\/[a-f0-9]{64})"/)?.[1];
+    return !!current && current !== assetBase;
+  } catch { return false; } // Offline reconnect still uses the normal retry path.
+}

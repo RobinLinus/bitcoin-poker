@@ -22,6 +22,21 @@ with identity or other signing capabilities. The signer must never distribute
 an ordinary signature under a reveal key for a transaction whose signature is
 supposed to disclose an opening.
 
+Reveal scripts contain only the ordered slot-key signature checks and the
+revealer's live signature check. Deal ID, node ID, and ordered slot numbers
+remain in the semantic program encoding and adaptor context; they are not
+pushed and dropped in Script. The full transaction sighash binds the spending
+outpoint and leaf. Showdown scripts likewise omit the repeated deal-ID tag.
+The compact-script profile uses predicate domain `BP52/chain-predicate/v7/compact-scripts`
+and program magic `BP52BSP8`, so its predicates cannot alias earlier scripts.
+
+Lamport score scripts authenticate each preimage by its committed SHA256 hash
+without a separate length guard. Honest signers still generate 32-byte
+preimages. Confirmed Alice certificates must retain any valid preimage up to
+the 520-byte stack-element limit so Bob can reuse the certificate in his payout;
+the observer must not impose the honest signer's fixed-size wire encoding on
+an otherwise valid on-chain witness.
+
 Public preauthorization context binds deal ID, graph ID, node ID, revealer,
 slot, authorization key, full commitment, and exact sighash. The recipient
 verifies all 52 candidates before activation. Completion validates the supplied

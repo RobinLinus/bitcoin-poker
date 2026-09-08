@@ -9,12 +9,12 @@ use bitcoin::blockdata::opcodes::all::{
     OP_ADD, OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CSV, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF,
     OP_EQUALVERIFY, OP_FROMALTSTACK, OP_GREATERTHAN, OP_GREATERTHANOREQUAL, OP_IF, OP_LESSTHAN,
     OP_LESSTHANOREQUAL, OP_NUMEQUAL, OP_NUMEQUALVERIFY, OP_NUMNOTEQUAL, OP_PICK, OP_RETURN,
-    OP_SHA256, OP_SIZE, OP_SUB, OP_SWAP, OP_TOALTSTACK, OP_VERIFY,
+    OP_SHA256, OP_SUB, OP_SWAP, OP_TOALTSTACK, OP_VERIFY,
 };
 use bitcoin::blockdata::script::Builder;
 use bitcoin::hashes::Hash;
 use bitcoin::key::UntweakedPublicKey;
-use bitcoin::secp256k1::{Secp256k1, Verification, XOnlyPublicKey};
+use bitcoin::secp256k1::{Secp256k1, Signing, Verification, XOnlyPublicKey};
 use bitcoin::taproot::{LeafVersion, TapLeafHash, TaprootBuilder, TaprootSpendInfo};
 use bitcoin::{ScriptBuf, Witness};
 /// NUMS internal key shared by script-only state outputs.
@@ -22,6 +22,27 @@ pub const SCRIPT_PATH_NUMS_KEY: [u8; 32] = [
     0x50, 0x92, 0x9b, 0x74, 0xc1, 0xa0, 0x49, 0x54, 0xb7, 0x8b, 0x4b, 0x60, 0x35, 0xe9, 0x7a, 0x5e,
     0x07, 0x8a, 0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5, 0x47, 0xbf, 0xee, 0x9a, 0xce, 0x80, 0x3a, 0xc0,
 ];
+// All script-only outputs use the same even-Y NUMS point. Parse it once and
+// compute Q = P + tG with libsecp256k1's precomputed generator multiplication.
+// t is the public BIP341 TapTweak hash, not a wallet or signing secret. This is
+// exactly the standard tweak operation; reject out-of-range t and infinity.
+pub(crate) fn script_path_output<C: Signing>(
+    secp: &Secp256k1<C>, root: bitcoin::taproot::TapNodeHash,
+) -> Result<ScriptBuf, BitcoinBackendError> {
+    use bitcoin::{key::TweakedPublicKey, secp256k1::{Parity, PublicKey, SecretKey}, taproot::TapTweakHash};
+    static INTERNAL: std::sync::OnceLock<Option<(XOnlyPublicKey, PublicKey)>> = std::sync::OnceLock::new();
+    let (xonly, full) = INTERNAL.get_or_init(|| XOnlyPublicKey::from_slice(&SCRIPT_PATH_NUMS_KEY)
+        .ok().map(|key| (key, key.public_key(Parity::Even))))
+        .as_ref().ok_or(BitcoinBackendError::TaprootConstruction)?;
+    let tweak = TapTweakHash::from_key_and_tweak(*xonly, Some(root)).to_byte_array();
+    let output = if tweak == [0; 32] { *full } else {
+        let scalar = SecretKey::from_slice(&tweak).map_err(|_| BitcoinBackendError::TaprootConstruction)?;
+        full.combine(&PublicKey::from_secret_key(secp, &scalar))
+            .map_err(|_| BitcoinBackendError::TaprootConstruction)?
+    };
+    Ok(ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(output.x_only_public_key().0)))
+}
+
 use poker_eval::{HandCategory, SUBSETS_5_OF_7};
 use poker_score_ots::{
     AliceScoreCertificate, BobScoreCertificate, KeyContext, LamportMessage, LamportPublicKey,
@@ -55,8 +76,8 @@ pub const SHOWDOWN_CATEGORIES: [HandCategory; 9] = [
 ];
 // The semantic domain and program-codec bump prevent predicate IDs from
 // aliasing superseded executable scripts.
-const PREDICATE_TAG: &[u8] = b"BP52/chain-predicate/v6/lower-bound-hand-claims";
-const PROGRAM_MAGIC: &[u8; 8] = b"BP52BSP7";
+const PREDICATE_TAG: &[u8] = b"BP52/chain-predicate/v7/compact-scripts";
+const PROGRAM_MAGIC: &[u8; 8] = b"BP52BSP8";
 const STATE_COMMITMENT_MAGIC: &[u8; 7] = b"BP52SC1";
 
 /// Deterministic semantic program for one Taproot leaf.
@@ -100,10 +121,7 @@ impl LeafProgram {
         encoded.extend_from_slice(PROGRAM_MAGIC);
         match self {
             Self::Action(program) => program.encode_into(&mut encoded),
-            Self::Reveal(program) => {
-                encoded.push(5);
-                encoded.extend_from_slice(program.script.as_bytes());
-            }
+            Self::Reveal(program) => program.encode_into(&mut encoded),
             Self::Timeout(program) => program.encode_into(&mut encoded),
             Self::AliceShowdown(program) => program.encode_into(&mut encoded),
             Self::BobPayout(program) => program.encode_into(&mut encoded),
@@ -244,6 +262,70 @@ pub struct CompiledTaprootState {
 }
 
 impl CompiledTaprootState {
+    /// Compute only the output and signing leaf hashes. Preparation does not need
+    /// scripts or control blocks; the selected path builds those later. The cache
+    /// is local to one traversal and bounded, including for adversarial scripts.
+    ///
+    /// # Errors
+    /// Rejects invalid programs, duplicate predicates, or invalid Taproot trees.
+    pub fn signing_projection<C: Signing>(
+        secp: &Secp256k1<C>,
+        logical_state_digest: [u8; 32],
+        programs: &[LeafProgram],
+        guard: Option<crate::channel::RevocationGuard>,
+        cache: &mut std::collections::HashMap<(TapLeafHash, u16), TapLeafHash>,
+    ) -> Result<(ScriptBuf, Vec<TapLeafHash>), BitcoinBackendError> {
+        use std::{cmp::Reverse, collections::BinaryHeap};
+        use bitcoin::taproot::TapNodeHash;
+        if programs.is_empty() || programs.len() > MAX_TAPROOT_LEAVES {
+            return Err(BitcoinBackendError::TaprootConstruction);
+        }
+        let mut tree = BinaryHeap::new();
+        let mut hashes = Vec::with_capacity(programs.len());
+        for (index, program) in programs.iter().enumerate() {
+            if programs[..index].contains(program) {
+                return Err(BitcoinBackendError::DuplicatePredicateId);
+            }
+            // Large executable showdown scripts are immutable across nodes. Their
+            // precomputed leaf hash includes every byte, independently of the
+            // predicate's node binding. Never hash/copy them just to look up a cache.
+            let base = match program {
+                LeafProgram::AliceShowdown(p) => TapLeafHash::from_byte_array(p.script_hash),
+                LeafProgram::BobPayout(p) => TapLeafHash::from_byte_array(p.script_hash),
+                _ => TapLeafHash::from_script(&program.to_tapscript()?, LeafVersion::TapScript),
+            };
+            let delay = guard.map_or(0, |g| g.contest_blocks);
+            let hash = if delay == 0 { base } else if let Some(hash) = cache.get(&(base, delay)) {
+                *hash
+            } else {
+                let script = program.to_tapscript()?;
+                let mut bytes = Builder::new().push_int(i64::from(delay))
+                    .push_opcode(OP_CSV).push_opcode(OP_DROP).into_script().into_bytes();
+                bytes.extend_from_slice(script.as_bytes());
+                let hash = TapLeafHash::from_script(&ScriptBuf::from_bytes(bytes), LeafVersion::TapScript);
+                if cache.len() < 128 { cache.insert((base, delay), hash); }
+                hash
+            };
+            hashes.push(hash);
+            tree.push((Reverse(EXECUTABLE_LEAF_WEIGHT), TapNodeHash::from(hash)));
+        }
+        if let Some(guard) = guard {
+            tree.push((Reverse(EXECUTABLE_LEAF_WEIGHT), TapNodeHash::from_script(
+                &guard.justice_script(), LeafVersion::TapScript)));
+        }
+        tree.push((Reverse(COMMITMENT_LEAF_WEIGHT), TapNodeHash::from_script(
+            &state_commitment_script(logical_state_digest), LeafVersion::TapScript)));
+        // Match rust-bitcoin's Huffman ordering: lowest weight, then highest
+        // node hash. Equal hashes produce the same parent regardless of order.
+        while tree.len() > 1 {
+            let (a, left) = tree.pop().ok_or(BitcoinBackendError::TaprootConstruction)?;
+            let (b, right) = tree.pop().ok_or(BitcoinBackendError::TaprootConstruction)?;
+            tree.push((Reverse(a.0.saturating_add(b.0)), TapNodeHash::from_node_hashes(left, right)));
+        }
+        let root = tree.pop().ok_or(BitcoinBackendError::TaprootConstruction)?.1;
+        Ok((script_path_output(secp, root)?, hashes))
+    }
+
     /// Compile all executable programs plus one hidden state-commitment leaf
     /// under the BIP341 NUMS internal key.
     ///
@@ -255,6 +337,30 @@ impl CompiledTaprootState {
         secp: &Secp256k1<C>,
         logical_state_digest: [u8; 32],
         programs: &[LeafProgram],
+    ) -> Result<Self, BitcoinBackendError> {
+        Self::compile_inner(secp, logical_state_digest, programs, None)
+    }
+
+    /// Protect a complete state, including every ordinary/timeout/showdown leaf.
+    /// Timeout programs must already encode contest delay plus action timeout.
+    /// Existing predicate identifiers remain lookup keys, while signatures bind
+    /// the new scripts and control blocks. Never reuse an on-chain inventory.
+    ///
+    /// # Errors
+    /// Rejects zero delay, invalid state programs or an unconstructable tree.
+    pub fn compile_contested<C: Verification>(
+        secp: &Secp256k1<C>, logical_state_digest: [u8; 32], programs: &[LeafProgram],
+        guard: crate::channel::RevocationGuard,
+    ) -> Result<Self, BitcoinBackendError> {
+        if guard.contest_blocks == 0 {
+            return Err(BitcoinBackendError::InvalidTransactionTemplate { reason: "zero contest delay" });
+        }
+        Self::compile_inner(secp, logical_state_digest, programs, Some(guard))
+    }
+
+    fn compile_inner<C: Verification>(
+        secp: &Secp256k1<C>, logical_state_digest: [u8; 32], programs: &[LeafProgram],
+        guard: Option<crate::channel::RevocationGuard>,
     ) -> Result<Self, BitcoinBackendError> {
         if programs.is_empty() {
             return Err(BitcoinBackendError::EmptyTaprootTree);
@@ -273,30 +379,57 @@ impl CompiledTaprootState {
             if !ids.insert(predicate_id) {
                 return Err(BitcoinBackendError::DuplicatePredicateId);
             }
+            let mut script = program.to_tapscript()?;
+            if let Some(guard) = guard {
+                let mut bytes = Builder::new().push_int(i64::from(guard.contest_blocks))
+                    .push_opcode(OP_CSV).push_opcode(OP_DROP).into_script().into_bytes();
+                bytes.extend_from_slice(script.as_bytes());
+                script = ScriptBuf::from_bytes(bytes);
+            }
             compiled.push((
                 predicate_id,
-                program.to_tapscript()?,
+                script,
                 program.expected_witness_elements()?,
                 program.showdown_category(),
                 program.showdown_outcome(),
             ));
+        }
+        if let Some(guard) = guard {
+            if !ids.insert(guard.predicate_id()) {
+                return Err(BitcoinBackendError::DuplicatePredicateId);
+            }
+            compiled.push((guard.predicate_id(), guard.justice_script(), 2, None, None));
         }
         compiled.sort_unstable_by_key(|(predicate_id, _, _, _, _)| *predicate_id);
 
         let commitment_script = state_commitment_script(logical_state_digest);
         let mut tree_scripts = compiled
             .iter()
-            .map(|(_, script, _, _, _)| (EXECUTABLE_LEAF_WEIGHT, script.clone()))
+            .map(|(_, script, _, _, _)| {
+                (
+                    TapLeafHash::from_script(script, LeafVersion::TapScript),
+                    EXECUTABLE_LEAF_WEIGHT,
+                    script.clone(),
+                )
+            })
             .collect::<Vec<_>>();
-        tree_scripts.push((COMMITMENT_LEAF_WEIGHT, commitment_script));
-        tree_scripts.sort_unstable_by(|(_, left), (_, right)| {
-            TapLeafHash::from_script(left, LeafVersion::TapScript)
+        tree_scripts.push((
+            TapLeafHash::from_script(&commitment_script, LeafVersion::TapScript),
+            COMMITMENT_LEAF_WEIGHT,
+            commitment_script,
+        ));
+        tree_scripts.sort_unstable_by(|(left_hash, _, left), (right_hash, _, right)| {
+            left_hash
                 .to_byte_array()
-                .cmp(&TapLeafHash::from_script(right, LeafVersion::TapScript).to_byte_array())
+                .cmp(&right_hash.to_byte_array())
                 .then_with(|| left.as_bytes().cmp(right.as_bytes()))
         });
-        let builder = TaprootBuilder::with_huffman_tree(tree_scripts)
-            .map_err(|_| BitcoinBackendError::TaprootConstruction)?;
+        let builder = TaprootBuilder::with_huffman_tree(
+            tree_scripts
+                .into_iter()
+                .map(|(_, weight, script)| (weight, script)),
+        )
+        .map_err(|_| BitcoinBackendError::TaprootConstruction)?;
         let internal_key = UntweakedPublicKey::from_slice(&SCRIPT_PATH_NUMS_KEY)
             .map_err(|_| BitcoinBackendError::TaprootConstruction)?;
         let spend_info = builder
@@ -552,9 +685,6 @@ fn append_score_certificate(mut builder: Builder, public_key: &LamportPublicKey)
             .push_slice(pair[0])
             .push_opcode(OP_ENDIF)
             .push_opcode(OP_SWAP)
-            .push_opcode(OP_SIZE)
-            .push_int(32)
-            .push_opcode(OP_EQUALVERIFY)
             .push_opcode(OP_SHA256)
             .push_opcode(OP_EQUALVERIFY);
     }
@@ -607,8 +737,20 @@ fn append_terminal_signature_checks(mut builder: Builder, keys: &[[u8; 32]]) -> 
 }
 
 fn validate_authorizers(keys: &[[u8; 32]; 2]) -> Result<(), BitcoinBackendError> {
-    validate_xonly(keys[0], "Alice preauthorization")?;
-    validate_xonly(keys[1], "Bob preauthorization")
+    // Validity is a property of these exact public bytes, independent of the
+    // node or transaction. Thousands of branches reuse one identity pair.
+    thread_local! {
+        static VALID: std::cell::RefCell<Vec<[[u8; 32]; 2]>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    VALID.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.contains(keys) { return Ok(()); }
+        validate_xonly(keys[0], "Alice preauthorization")?;
+        validate_xonly(keys[1], "Bob preauthorization")?;
+        if cache.len() == 8 { cache.remove(0); }
+        cache.push(*keys);
+        Ok(())
+    })
 }
 
 fn validate_xonly(key: [u8; 32], purpose: &'static str) -> Result<(), BitcoinBackendError> {
@@ -685,4 +827,7 @@ mod timeout;
 pub use timeout::TimeoutProgram;
 
 mod showdown;
-pub use showdown::{AliceShowdownProgram, BobPayoutProgram};
+pub use showdown::{AliceShowdownProgram, BobPayoutProgram, PreparedShowdownCards};
+
+#[cfg(test)]
+mod tests;

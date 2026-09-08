@@ -116,7 +116,8 @@ fi
 export AR_wasm32_unknown_unknown="${wasm_ar}"
 export CARGO_INCREMENTAL=0
 export CC_wasm32_unknown_unknown="${wasm_cc}"
-export CFLAGS_wasm32_unknown_unknown="--target=wasm32-unknown-unknown -ffile-prefix-map=${repository_root}=."
+# Avoid Wasm's expensive int128 emulation using libsecp256k1's supported backend.
+export CFLAGS_wasm32_unknown_unknown="--target=wasm32-unknown-unknown -ffile-prefix-map=${repository_root}=. -DUSE_FORCE_WIDEMUL_INT64"
 export RANLIB_wasm32_unknown_unknown="${wasm_ranlib}"
 export RUSTFLAGS="--remap-path-prefix=${repository_root}=."
 export SOURCE_DATE_EPOCH=0
@@ -145,6 +146,10 @@ RUSTFLAGS="${RUSTFLAGS} -C link-arg=-zstack-size=8388608" cargo build \
   --release \
   --target "${target}" \
   --package dealer-wasm
+
+RUSTFLAGS="${RUSTFLAGS} -C link-arg=-zstack-size=33554432" cargo build \
+  --manifest-path "${repository_root}/Cargo.toml" --locked --release \
+  --target "${target}" --package poker-session-wasm
 
 artifact_directory="${CARGO_TARGET_DIR}/${target}/release"
 if [ "${publish}" -eq 1 ]; then

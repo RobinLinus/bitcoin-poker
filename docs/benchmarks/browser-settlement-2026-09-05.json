@@ -1,0 +1,29 @@
+{
+  "ok": false,
+  "cancelled": true,
+  "latest": {
+    "type": "progress",
+    "full": true,
+    "expectedNodes": 56132,
+    "wasmBytes": 2166088,
+    "wasmSha256": "6d36759c2a9963dcaf2a892624d08a93f9830f0d21e9f3e97adb696314178eeb",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "hardwareConcurrency": 15,
+    "stackBytes": 33554432,
+    "phase": "recoveryInventory",
+    "done": 9088,
+    "total": 56161,
+    "artifactBytes": 8416186,
+    "timingsMs": {
+      "loadAndCompile": 6.299999952316284,
+      "dealerSetup": 1239.8000001907349,
+      "graphCompilation": 204.39999985694885,
+      "transactionInventory": 614724.5,
+      "cosigning": 58103.700000047684,
+      "snapshotEncoding": 9.400000095367432
+    },
+    "elapsedMs": 773752.7999999523,
+    "peakWasmBytes": 99876864
+  },
+  "recordedAt": "2026-09-05T07:40:54.954Z"
+}

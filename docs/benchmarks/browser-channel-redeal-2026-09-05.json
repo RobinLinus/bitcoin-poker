@@ -1,0 +1,83 @@
+{
+  "date": "2026-09-05",
+  "network": "MutinyNet",
+  "status": "PASS",
+  "driver": "Actual TableSession with background successor workers; two full cooperative hands",
+  "wasmSha256": "9e969d8bf2ed149867fd8a59b90e8d82cb89fe5b3ccd6e3ca5748ddf8433622e",
+  "fundingOrigin": "142311f3b88aeddff0ff554f4e1752609f5b60ab0504f95b6ba078e0b1491319:0",
+  "initialSetupIncludingFundingMs": 61224.2,
+  "redealMs": 34587.3,
+  "successorPreparationMs": [
+    30760.195,
+    30727.195
+  ],
+  "hands": [
+    {
+      "gameId": "c4a991781fe4ce9445a02f25dc20b077ea93ac915eb1e22b8313ec11b047cd51",
+      "balances": [
+        19800,
+        20200
+      ],
+      "button": 0
+    },
+    {
+      "gameId": "0e9c3c7440e2da0b11fc9f4f092ecbc510686557c9c391ca45fb834e341f12e0",
+      "balances": [
+        19600,
+        20400
+      ],
+      "button": 1
+    }
+  ],
+  "fundingPublishHandlerCalls": 52,
+  "uniqueFundingTransactions": 1,
+  "gameplayAndRedealBroadcastAttempts": 0,
+  "fundingUnspent": true,
+  "sitOutStoppedRedeal": true,
+  "restoredPlayableTable": true,
+  "retiredMonitorBytes": [
+    1647,
+    1558
+  ],
+  "retiredMonitorPaths": [
+    0,
+    0
+  ],
+  "retiredMonitorPenaltiesPerPlayer": 1,
+  "bettingAgreementMs": [
+    307.605,
+    918.18,
+    273.205,
+    616.435,
+    289.01,
+    290.205,
+    510.425,
+    518.495,
+    325.895,
+    380.755,
+    392.565,
+    399.14,
+    409.88,
+    480.025,
+    648.395,
+    460.815
+  ],
+  "earlierRun": {
+    "status": "PASS",
+    "redealMs": 31239.11,
+    "firstGameId": "97f90330242203911fdefae1f6dbc9a5f384e6bdd39e2acd7a1fa9d59b28c7db",
+    "secondGameId": "6359a79afeebd06066698c5b68b9a8889f49e566058280f5eb1dea532ead61c8"
+  },
+  "limitations": [
+    "The remaining gap is dominated by full settlement preparation after final balances are known.",
+    "Two players share one computer; timings are development measurements.",
+    "Browser tests do not publish a revoked root or qualify forced-exit orchestration."
+  ],
+  "validation": {
+    "browserConsecutiveHands": 2,
+    "javascriptTestsPassed": 46,
+    "nativeRecoveryReleaseSeconds": 25.39,
+    "nativeRecoveryDebugSeconds": 377.97,
+    "staticModuleServingTest": "PASS"
+  }
+}

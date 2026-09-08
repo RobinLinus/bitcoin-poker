@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use poker_relay::DeploymentConfig;
 use poker_relay::RelayServer;
 
-const USAGE: &str = "usage: poker-relay <database-path> [listen-address] <deployment-config>";
+const USAGE: &str = "usage: poker-relay [listen-address] <deployment-config>";
 
-type StartupArguments = (PathBuf, SocketAddr, PathBuf);
+type StartupArguments = (SocketAddr, PathBuf);
 
 fn parse_arguments(
     arguments: impl IntoIterator<Item = std::ffi::OsString>,
@@ -26,11 +26,7 @@ fn parse_arguments(
     {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, USAGE));
     }
-    let (database, remaining) = arguments
-        .split_first()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, USAGE))?;
-    let database = PathBuf::from(database);
-    let (listen, deployment_path) = match remaining {
+    let (listen, deployment_path) = match arguments.as_slice() {
         [deployment_path] => (
             "127.0.0.1:3000".parse().map_err(|_| {
                 std::io::Error::new(
@@ -63,12 +59,12 @@ fn parse_arguments(
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, USAGE));
         }
     };
-    Ok(Some((database, listen, deployment_path)))
+    Ok(Some((listen, deployment_path)))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let Some((database, listen, deployment_path)) = parse_arguments(std::env::args_os().skip(1))?
+    let Some((listen, deployment_path)) = parse_arguments(std::env::args_os().skip(1))?
     else {
         println!("{USAGE}");
         return Ok(());
@@ -80,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "deployment config is not valid canonical JSON",
         )
     })?;
-    let relay = RelayServer::open_with_deployment(database, &deployment)?;
+    let relay = RelayServer::open_with_deployment(&deployment)?;
     let listener = tokio::net::TcpListener::bind(listen).await?;
     eprintln!("BP52 relay listening on {listen}");
     axum::serve(listener, relay.router()).await?;
@@ -106,7 +102,7 @@ mod tests {
 
     #[test]
     fn explicit_deployment_is_required() -> Result<(), Box<dyn std::error::Error>> {
-        match parse_arguments(args(&["room.sqlite"])) {
+        match parse_arguments(args(&[])) {
             Err(error) => assert_eq!(error.to_string(), USAGE),
             Ok(_) => return Err("missing deployment unexpectedly parsed".into()),
         }
@@ -119,19 +115,18 @@ mod tests {
 
     #[test]
     fn parses_default_and_explicit_listen_addresses() -> Result<(), Box<dyn std::error::Error>> {
-        let Some(default) = parse_arguments(args(&["room.sqlite", "deployment.json"]))? else {
+        let Some(default) = parse_arguments(args(&["deployment.json"]))? else {
             return Err("server arguments unexpectedly requested help".into());
         };
-        assert_eq!(default.0, PathBuf::from("room.sqlite"));
-        assert_eq!(default.1.to_string(), "127.0.0.1:3000");
-        assert_eq!(default.2, PathBuf::from("deployment.json"));
+        assert_eq!(default.0.to_string(), "127.0.0.1:3000");
+        assert_eq!(default.1, PathBuf::from("deployment.json"));
 
         let Some(explicit) =
-            parse_arguments(args(&["room.sqlite", "127.0.0.1:4000", "deployment.json"]))?
+            parse_arguments(args(&["127.0.0.1:4000", "deployment.json"]))?
         else {
             return Err("server arguments unexpectedly requested help".into());
         };
-        assert_eq!(explicit.1.to_string(), "127.0.0.1:4000");
+        assert_eq!(explicit.0.to_string(), "127.0.0.1:4000");
         Ok(())
     }
 }

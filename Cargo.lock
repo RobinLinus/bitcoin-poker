@@ -189,6 +189,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core",
+ "base64 0.22.1",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -207,8 +208,10 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "sha1",
  "sync_wrapper",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -300,7 +303,7 @@ dependencies = [
  "bitcoin_hashes",
  "hex-conservative 0.2.3",
  "hex_lit",
- "secp256k1",
+ "secp256k1 0.29.1",
 ]
 
 [[package]]
@@ -792,9 +795,11 @@ dependencies = [
  "dealer-proofs",
  "dealer-transcript",
  "dealer-uniqueness",
+ "hmac",
  "k256",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "sha2",
  "thiserror 2.0.20",
  "zeroize",
 ]
@@ -2360,6 +2365,7 @@ dependencies = [
  "k256",
  "once_cell",
  "secp",
+ "secp256k1 0.31.1",
  "sha2",
  "subtle",
 ]
@@ -2601,6 +2607,7 @@ dependencies = [
  "dealer-bitcoin",
  "dealer-openings",
  "dealer-protocol",
+ "hmac",
  "k256",
  "poker-core-test-support",
  "poker-eval",
@@ -2713,13 +2720,55 @@ dependencies = [
 ]
 
 [[package]]
-name = "poker-settlement"
+name = "poker-session"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
  "dealer-bitcoin",
  "dealer-openings",
  "dealer-protocol",
+ "hex",
+ "hmac",
+ "k256",
+ "poker-bitcoin",
+ "poker-core-test-support",
+ "poker-eval",
+ "poker-score-ots",
+ "poker-settlement",
+ "poker-settlement-types",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
+name = "poker-session-wasm"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "getrandom 0.2.17",
+ "hex",
+ "poker-session",
+ "poker-settlement",
+ "serde",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
+name = "poker-settlement"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "dealer-bitcoin",
+ "dealer-codec",
+ "dealer-group",
+ "dealer-openings",
+ "dealer-protocol",
+ "hmac",
  "k256",
  "poker-bitcoin",
  "poker-codec",
@@ -3314,6 +3363,7 @@ dependencies = [
  "base16ct",
  "k256",
  "once_cell",
+ "secp256k1 0.31.1",
  "subtle",
 ]
 
@@ -3325,7 +3375,18 @@ checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
  "bitcoin_hashes",
  "rand 0.8.5",
- "secp256k1-sys",
+ "secp256k1-sys 0.10.1",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c3c81b43dc2d8877c216a3fccf76677ee1ebccd429566d3e67447290d0c42b2"
+dependencies = [
+ "bitcoin_hashes",
+ "rand 0.9.5",
+ "secp256k1-sys 0.11.0",
 ]
 
 [[package]]
@@ -3333,6 +3394,15 @@ name = "secp256k1-sys"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcb913707158fadaf0d8702c2db0e857de66eb003ccfdda5924b5f5ac98efb38"
 dependencies = [
  "cc",
 ]
@@ -3407,6 +3477,32 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "settlement-benchmark"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "dealer-bitcoin",
+ "dealer-protocol",
+ "getrandom 0.2.17",
+ "poker-bitcoin",
+ "poker-score-ots",
+ "poker-settlement",
+ "poker-settlement-types",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
+name = "sha1"
+version = "0.10.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest",
 ]
 
 [[package]]
@@ -3719,6 +3815,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
+dependencies = [
+ "futures-util",
+ "log",
+ "tokio",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3796,6 +3904,22 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tungstenite"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.9.5",
+ "sha1",
+ "thiserror 2.0.20",
+]
 
 [[package]]
 name = "typenum"

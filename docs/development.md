@@ -16,7 +16,7 @@ scripts/check-workspace.sh
 Run the practice app with:
 
 ```sh
-cargo run -p poker-relay -- /tmp/poker.sqlite 127.0.0.1:3000 deployments/mutinynet/client.json
+cargo run -p poker-relay -- 127.0.0.1:3000 deployments/mutinynet/client.json
 ```
 
 Protocol developer tools:
@@ -46,5 +46,3 @@ from local/opponent, transport seat, and button position.
 
 Generated binaries and their manifest live in `apps/web/public/wasm/` and must be
 published through the build script. Local databases/secrets stay outside source;
-any pre-existing `.bp52/` directories were deliberately left untouched. Older
-build caches were retained under the ignored `target/pre-cleanup/` directory.

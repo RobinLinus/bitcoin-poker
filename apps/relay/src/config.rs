@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 pub enum ApplicationMode {
     /// Play with practice chips and no transaction publication.
     Practice,
+    /// Disposable-funds on-chain browser integration test.
+    OnchainTest,
 }
 
 /// Operator configuration, separate from funded-game economics.
@@ -49,14 +51,25 @@ pub struct BrowserDeploymentConfig {
 pub(super) fn resolve_deployment(
     value: &DeploymentConfig,
 ) -> Result<BrowserDeploymentConfig, RelayBuildError> {
-    if value.schema_version != 3
-        || value.chain.allow_broadcast
-        || value.deployment_id.is_empty()
+    if !matches!(
+        (
+            value.schema_version,
+            value.mode,
+            value.chain.allow_broadcast
+        ),
+        (3, ApplicationMode::Practice, false) | (4, ApplicationMode::OnchainTest, true)
+    ) || value.deployment_id.is_empty()
         || value.deployment_id.len() > 64
         || !value
             .deployment_id
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err(RelayBuildError::Configuration);
+    }
+    if value.mode == ApplicationMode::OnchainTest
+        && value.chain.signet_challenge_hex.as_deref()
+            != Some("512102f7561d208dd9ae99bf497273e16f389bdbd6c4742ddb8e6b216e64fa2928ad8f51ae")
     {
         return Err(RelayBuildError::Configuration);
     }
@@ -97,6 +110,20 @@ mod tests {
             "../../../crates/poker-client-ports/tests/fixtures/funding-diagnostic.json"
         );
         assert!(serde_json::from_str::<DeploymentConfig>(old).is_err());
+        Ok(())
+    }
+    #[test]
+    fn onchain_test_requires_explicit_mode_and_mutinynet() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let mut config: DeploymentConfig = serde_json::from_str(include_str!(
+            "../../../deployments/mutinynet/onchain-test.json"
+        ))?;
+        assert!(resolve_deployment(&config).is_ok());
+        config.schema_version = 3;
+        assert!(resolve_deployment(&config).is_err());
+        config.schema_version = 4;
+        config.chain.signet_challenge_hex = Some("51".to_owned());
+        assert!(resolve_deployment(&config).is_err());
         Ok(())
     }
 }

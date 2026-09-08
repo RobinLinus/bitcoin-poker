@@ -16,6 +16,7 @@ poker-eval.workspace = true
 dealer-bitcoin.workspace = true
 dealer-protocol.workspace = true
 sha2.workspace = true
+hmac.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

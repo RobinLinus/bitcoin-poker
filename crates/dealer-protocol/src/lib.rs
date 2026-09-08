@@ -4,6 +4,7 @@
 mod certificate;
 mod reveal;
 mod session;
+mod local;
 
 pub use certificate::{Envelope, SetupCertificate, verify_setup_certificate};
 pub use reveal::{

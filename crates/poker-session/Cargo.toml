@@ -1,0 +1,28 @@
+[package]
+name = "poker-session"
+description = "Single-player on-chain poker session and recovery journal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+[dependencies]
+thiserror.workspace = true
+bitcoin.workspace = true
+dealer-protocol.workspace = true
+k256.workspace = true
+dealer-openings.workspace = true
+dealer-bitcoin.workspace = true
+poker-bitcoin.workspace = true
+poker-settlement.workspace = true
+poker-settlement-types.workspace = true
+poker-score-ots.workspace = true
+poker-eval.workspace = true
+rand_chacha.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+[dev-dependencies]
+poker-core-test-support.workspace = true

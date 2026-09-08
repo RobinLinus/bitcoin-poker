@@ -1,10 +1,13 @@
 #![forbid(unsafe_code)]
 //! Dlog on-chain poker graph compiler and preparation.
+/// Fixed-tree channel materialization and revocation protection.
+pub mod channel;
 pub mod betting;
 mod error;
 pub mod graph;
 pub mod manifest;
 pub mod preparation;
+mod payout_projection;
 pub mod reveals;
 pub mod settlement;
 pub mod showdown;

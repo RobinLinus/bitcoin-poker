@@ -80,6 +80,19 @@ pub fn taproot_script_sighash_default(
     script: &Script,
 ) -> Result<[u8; 32], BitcoinBackendError> {
     let leaf_hash = TapLeafHash::from_script(script, LeafVersion::TapScript);
+    taproot_leaf_sighash_default(transaction, input_index, prevouts, leaf_hash)
+}
+
+/// Compute the same script-path digest from an already verified leaf hash.
+///
+/// # Errors
+/// Rejects an invalid input index or prevout set.
+pub fn taproot_leaf_sighash_default(
+    transaction: &Transaction,
+    input_index: usize,
+    prevouts: &[TxOut],
+    leaf_hash: TapLeafHash,
+) -> Result<[u8; 32], BitcoinBackendError> {
     let sighash = SighashCache::new(transaction)
         .taproot_script_spend_signature_hash(
             input_index,

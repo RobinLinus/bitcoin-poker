@@ -18,7 +18,7 @@ wallet=${BP52_CORE_WALLET_NAME:-bp52-core-qualification}
 rpc_port=$((24000 + ($$ % 10000)))
 
 usage() {
-    echo "usage: $0 [--native | --docker] [--suite all|dlog|dlog-graph] [--require] [--keep-datadir]"
+    echo "usage: $0 [--native | --docker] [--suite all|dlog|dlog-graph|session|channel] [--require] [--keep-datadir]"
     echo
     echo "  --native         require bitcoind and bitcoin-cli on PATH"
     echo "  --docker         require an already-cached ${image} image"
@@ -40,7 +40,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         --suite)
             if [ "$#" -lt 2 ]; then
-                echo "error: --suite requires all, dlog, or dlog-graph" >&2
+                echo "error: --suite requires all, dlog, dlog-graph, session, or channel" >&2
                 exit 2
             fi
             suite=$2
@@ -63,10 +63,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$suite" in
-    all|dlog|dlog-graph)
+    all|dlog|dlog-graph|session|channel)
         ;;
     *)
-        echo "error: --suite requires all, dlog, or dlog-graph" >&2
+        echo "error: --suite requires all, dlog, dlog-graph, session, or channel" >&2
         exit 2
         ;;
 esac
@@ -156,6 +156,12 @@ trap cleanup EXIT HUP INT TERM
 
 run_rust_suite() {
     case "$suite" in
+        channel)
+            "$cargo_path" test -p poker-bitcoin --test channel_core_regtest --locked \
+                -- --ignored --test-threads=1 --nocapture
+            "$cargo_path" test -p poker-settlement --test settlement_core_regtest --locked \
+                -- --ignored --exact bitcoin_core_regtest_channel_hand --nocapture
+            ;;
         all|dlog)
             "$cargo_path" test --manifest-path Cargo.toml \
                 -p dealer-bitcoin --test bitcoin_core_regtest --locked \
@@ -164,6 +170,10 @@ run_rust_suite() {
                 -- --ignored --exact bitcoin_core_regtest_dealer_showdown --nocapture
             "$cargo_path" test -p poker-settlement --test settlement_core_regtest --locked \
                 -- --ignored --exact bitcoin_core_regtest_settlement --nocapture
+            ;;
+        session)
+            "$cargo_path" test -p poker-session --test hand --locked \
+                -- --ignored --test-threads=1 --nocapture
             ;;
         dlog-graph)
             "$cargo_path" test -p poker-settlement --test settlement_core_regtest --locked \

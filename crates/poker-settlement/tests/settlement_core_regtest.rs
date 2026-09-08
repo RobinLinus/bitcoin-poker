@@ -27,12 +27,56 @@ use poker_settlement_types::{
 use rand_core::OsRng;
 use std::collections::HashMap;
 
+fn graph_root(id: [u8; 32]) -> [u8; 32] { root_node_id(&id) }
+fn branch_secret(owner: Role, node: [u8; 32]) -> [u8; 32] {
+    poker_bitcoin::channel::retirement_secret(&[91; 32],
+        poker_bitcoin::channel::RetirementLevel::Branch, [92; 32], node, 0, owner == Role::Bob, false)
+}
+fn justice_template(parent: &bitcoin::Transaction, vout: u32, destination: bitcoin::ScriptBuf)
+    -> TestResult<poker_bitcoin::TransactionTemplate> {
+    let output = parent.output.get(vout as usize).ok_or("justice output missing")?.clone();
+    let value = output.value.to_sat().checked_sub(500).ok_or("justice needs fee rescue")?;
+    Ok(poker_bitcoin::TransactionTemplate::normal(Network::Regtest,
+        bitcoin::OutPoint::new(parent.compute_txid(), vout), output,
+        vec![bitcoin::TxOut { value: Amount::from_sat(value), script_pubkey: destination }], 500)?)
+}
+fn justice_transaction(parent: &bitcoin::Transaction, vout: u32, leaf: &poker_bitcoin::CompiledTapLeaf,
+    signer: &Keypair, secret: [u8; 32], destination: bitcoin::ScriptBuf) -> TestResult<bitcoin::Transaction> {
+    let t = justice_template(parent, vout, destination)?;
+    let digest = taproot_script_sighash_default(t.transaction(), 0, &[t.parent_output().clone()], leaf.script())?;
+    let sig = sign_sighash_default(&Secp256k1::new(), signer, digest);
+    let mut tx = t.transaction().clone();
+    tx.input[0].witness = leaf.assemble_witness(&[sig.to_bytes().to_vec(), secret.to_vec()])?;
+    Ok(tx)
+}
+fn payout_justice(parent: &bitcoin::Transaction, vout: u32, output: &poker_bitcoin::channel::ContestOutput,
+    signer: &Keypair, secret: [u8; 32], destination: bitcoin::ScriptBuf) -> TestResult<bitcoin::Transaction> {
+    let t = justice_template(parent, vout, destination)?;
+    let digest = taproot_script_sighash_default(t.transaction(), 0, &[t.parent_output().clone()], output.justice_script())?;
+    let sig = sign_sighash_default(&Secp256k1::new(), signer, digest);
+    let mut tx = t.transaction().clone();
+    tx.input[0].witness = output.witness(true, &[sig.to_bytes().to_vec(), secret.to_vec()])?;
+    Ok(tx)
+}
+
+#[test]
+#[ignore = "requires managed Bitcoin Core --suite channel --require"]
+fn bitcoin_core_regtest_channel_hand() -> TestResult {
+    std::thread::Builder::new().stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            for owner in [Role::Alice, Role::Bob] {
+                run(Some(owner)).map_err(|e| e.to_string())?;
+            }
+            Ok::<_, String>(())
+        })?.join().map_err(|_| "channel graph test panicked")?.map_err(Into::into)
+}
+
 #[test]
 #[ignore = "requires managed Bitcoin Core --suite dlog --require"]
 fn bitcoin_core_regtest_settlement() -> TestResult {
     std::thread::Builder::new()
         .stack_size(32 * 1024 * 1024)
-        .spawn(|| run().map_err(|e| e.to_string()))?
+        .spawn(|| run(None).map_err(|e| e.to_string()))?
         .join()
         .map_err(|_| "dlog graph test panicked")?
         .map_err(Into::into)
@@ -46,7 +90,7 @@ fn bitcoin_core_regtest_settlement() -> TestResult {
     clippy::cast_possible_truncation,
     reason = "Fixture arrays and indices are bounded by the fixed nine-card protocol."
 )]
-fn run() -> TestResult {
+fn run(channel_owner: Option<Role>) -> TestResult {
     let Some(core) = CoreCli::from_environment()? else {
         return Ok(());
     };
@@ -109,10 +153,11 @@ fn run() -> TestResult {
         &core,
         &mining,
         &origin.script_pubkey(),
-        Amount::from_sat(rules.total_locked_value()? + 500),
+        Amount::from_sat(rules.total_locked_value()? + if channel_owner.is_some() { 1000 } else { 500 }),
     )?;
     let origin_tip = path.tip().ok_or("origin missing")?.clone();
     let parameters = SettlementConfig {
+        predeal_anchor: None,
         network: Network::Regtest,
         network_id: bitcoin::blockdata::constants::genesis_block(Network::Regtest)
             .block_hash()
@@ -135,7 +180,50 @@ fn run() -> TestResult {
         &mut OsRng,
         KeyContext::new(id, root_node_id(&id), LamportPurpose::BobScore24Bit),
     )?;
-    let graph = SettlementGraph::compile(deal, parameters, &fees, [public_a, public_b])?;
+    let compile = |owner| -> TestResult<SettlementGraph> {
+        let graph = SettlementGraph::compile(deal, parameters.clone(), &fees, [public_a.clone(), public_b.clone()])?;
+        if let Some(owner) = owner {
+            let commitments = graph.plan().nodes.iter().filter(|n| n.node_id != graph.plan().root_node_id)
+                .map(|n| poker_bitcoin::channel::retirement_commitment(branch_secret(owner, n.node_id))).collect::<Vec<_>>();
+            Ok(graph.with_channel_protection(owner, 3,
+                poker_bitcoin::channel::retirement_commitment(branch_secret(owner, graph_root(id))), &commitments)?)
+        } else { Ok(graph) }
+    };
+    let graph = compile(channel_owner)?;
+    if let Some(owner) = channel_owner {
+        let other = compile(Some(owner.other()))?;
+        let roots = [graph.hand_commitment(origin_tip.output().clone(), 500)?,
+            other.hand_commitment(origin_tip.output().clone(), 500)?];
+        assert_eq!(roots[0].transaction().input[0].previous_output, roots[1].transaction().input[0].previous_output);
+        assert_ne!(roots[0].txid(), roots[1].txid());
+        let leaf = &origin.leaves()[0];
+        for (i, root) in roots.iter().enumerate() {
+            let digest = taproot_script_sighash_default(root.transaction(), 0, &[origin_tip.output().clone()], leaf.script())?;
+            let sigs = signers.map(|k| sign_sighash_default(&secp, &k, digest).to_bytes().to_vec());
+            let mut complete = root.transaction().clone();
+            complete.input[0].witness = leaf.assemble_witness(&sigs)?;
+            core.assert_package_accepted(&[complete.clone()], "either owner can publish its root")?;
+            let publisher = if i == 0 { owner } else { owner.other() };
+            let mut withheld = sigs;
+            withheld[usize::from(publisher.code())] = vec![0; 64];
+            let mut peer_copy = complete.clone();
+            peer_copy.input[0].witness = leaf.assemble_witness(&withheld)?;
+            core.assert_rejected(&peer_copy, "peer lacks owner funding signature and cannot frame owner")?;
+            let gate = if i == 0 { graph.hand_gate()? } else { other.hand_gate()? };
+            let guard = poker_bitcoin::channel::RevocationGuard { contest_blocks: 3,
+                commitment: poker_bitcoin::channel::retirement_commitment(branch_secret(publisher, graph_root(id))),
+                counterparty: signers[usize::from(publisher.other().code())].x_only_public_key().0 };
+            let justice_leaf = gate.leaf(guard.predicate_id()).ok_or("hand justice missing")?;
+            let justice = justice_transaction(&complete, 0, justice_leaf, &signers[usize::from(publisher.other().code())],
+                branch_secret(publisher, graph_root(id)), core.new_script()?)?;
+            core.assert_package_accepted(&[complete, justice], "stale hand root permits immediate justice")?;
+        }
+        let root = &roots[0];
+        let digest = taproot_script_sighash_default(root.transaction(), 0, &[origin_tip.output().clone()], leaf.script())?;
+        let mut complete = root.transaction().clone();
+        complete.input[0].witness = leaf.assemble_witness(&signers.map(|k| sign_sighash_default(&secp, &k, digest).to_bytes().to_vec()))?;
+        path.advance(&complete, 0, "channel owner commitment")?;
+    }
     let activation = graph.activation(origin_tip.output().clone(), 500)?;
     let mut preparation =
         poker_settlement::preparation::SettlementPreparation::new(&graph, activation.clone())?;
@@ -183,23 +271,37 @@ fn run() -> TestResult {
     assert_eq!(restored.missing_count(), restored.requests().len());
     restored.restore_verified_snapshot(&snapshot)?;
     assert_eq!(restored.missing_count(), 0);
+    // Exercise authenticated local recovery, including lazy reveal materialization,
+    // through the actual confirmed hand below.
+    let checkpoint = restored.seal_checkpoint(&[97; 32])?;
+    let restored = poker_settlement::preparation::SettlementPreparation::open_checkpoint(
+        &[97; 32],
+        &checkpoint,
+        Network::Regtest,
+    )?;
     let ready = restored.into_prepared_authorizations()?;
     assert_eq!(ready.activation().transaction(), activation.transaction());
     eprintln!(
         "complete dlog graph: {} nodes; preparation restored and every artifact reverified",
         graph.plan().nodes.len()
     );
-    let leaf = &origin.leaves()[0];
+    let gate = if channel_owner.is_some() { graph.hand_gate()? } else { origin };
+    let entry_program = poker_bitcoin::LeafProgram::Action(poker_bitcoin::ActionProgram::new(id, root_node_id(&id), Action::Check, identities)?);
+    let leaf = if channel_owner.is_some() { gate.leaf(entry_program.predicate_id()).ok_or("entry leaf missing")? } else { &gate.leaves()[0] };
     let digest = taproot_script_sighash_default(
         activation.transaction(),
         0,
-        &[origin_tip.output().clone()],
+        &[activation.parent_output().clone()],
         leaf.script(),
     )?;
     let mut tx = activation.transaction().clone();
     tx.input[0].witness = leaf.assemble_witness(
         &signers.map(|k| sign_sighash_default(&secp, &k, digest).to_bytes().to_vec()),
     )?;
+    if channel_owner.is_some() {
+        core.assert_rejected(&tx, "hand launch waits for retirement contest")?;
+        path.mine_empty_blocks(2)?;
+    }
     path.advance(&tx, 0, "dlog activation")?;
     let mut current = graph.plan().root_node_id;
     let mut observed = HashMap::new();
@@ -247,8 +349,25 @@ fn run() -> TestResult {
         timeout_tx.input[0].witness =
             timeout_leaf.assemble_witness(&timeout_auth.map(|s| s.to_vec()))?;
         path.assert_rejected(&timeout_tx, "dlog graph timeout before CSV")?;
-        path.mine_empty_blocks(timeout.csv)?;
-        core.assert_package_accepted(&[timeout_tx], "mature unilateral dlog graph timeout")?;
+        path.mine_empty_blocks(timeout.csv + graph.contest_delay(current))?;
+        core.assert_package_accepted(&[timeout_tx.clone()], "mature unilateral dlog graph timeout")?;
+        if let Some(owner) = channel_owner {
+            let child = timeout_edge.child_node_id;
+            let guard = graph.branch_guard(child)?.ok_or("timeout guard missing")?;
+            // Timeout splits value; each payout must retain the same justice right.
+            let terminal = graph.node(&child).ok_or("timeout child missing")?;
+            let PlannedState::Terminal(t) = terminal.state else { return Err("timeout is not terminal".into()); };
+            let mut vout = 0;
+            for (recipient, amount) in [(Role::Alice, t.alice_output_sat), (Role::Bob, t.bob_output_sat)] {
+                if amount == 0 { continue; }
+                let payout = graph.guarded_payout(child, recipient)?;
+                let justice = payout_justice(&timeout_tx, vout, &payout, &signers[usize::from(timeout.beneficiary.other().code())],
+                    branch_secret(owner, child), core.new_script()?)?;
+                assert_eq!(poker_bitcoin::channel::retirement_commitment(branch_secret(owner, child)), guard.commitment);
+                core.assert_package_accepted(&[timeout_tx.clone(), justice], "retired timeout cannot split funds out of justice")?;
+                vout += 1;
+            }
+        }
         let role = match node.state {
             PlannedState::Reveal { pattern, .. } => pattern.revealer(),
             PlannedState::Betting { state, .. } => state.actor,

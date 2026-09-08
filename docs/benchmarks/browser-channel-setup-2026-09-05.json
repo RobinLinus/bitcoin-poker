@@ -1,0 +1,78 @@
+{
+  "date": "2026-09-05",
+  "network": "MutinyNet",
+  "status": "PASS",
+  "driver": "Actual browser TableSession, two independent channel workers on the same computer",
+  "gameId": "fd2b4e095f3af6e42d8a4d721adc441e991cb18d460426bdc7825d015a245d73",
+  "wasmSha256": "0b3aef69887bec61c09f0acecc3abb7d971505b3bb8b49d67592854d8fb32e3b",
+  "fundingTxid": "84b4ef07ce8f1e22a06b75f80afd6a5ebbeb8d069f9cd487abee92b13f1755ec",
+  "preparationMs": [
+    31950.665,
+    31960.43
+  ],
+  "readyIncludingShuffleMs": 42395.135,
+  "startupIncludingFundingConfirmationMs": 57187.485,
+  "ownerConstructionMs": [
+    [
+      15234.84,
+      15147.14
+    ],
+    [
+      15277.965,
+      15136.905
+    ]
+  ],
+  "authorizationRequestsPerOwner": 56161,
+  "constructionWorkersPerPlayer": 2,
+  "cryptoWorkersPerPlayer": 4,
+  "bettingAgreementMs": [
+    278.645,
+    342.085,
+    345.845,
+    1112.015,
+    689.765,
+    515.94,
+    638.475,
+    489.595
+  ],
+  "fundingPublishHandlerCalls": 24,
+  "uniqueFundingTransactions": 1,
+  "inGameBroadcastAttempts": 0,
+  "fundingUnspent": true,
+  "finalBalances": [
+    20200,
+    19800
+  ],
+  "terminalNode": "d17a9b27fdd76b64faa8a3f56ccdd4476a49de5f754931304a3b33b5927263e6",
+  "recoveredErrors": [
+    "Failed to fetch"
+  ],
+  "baseline": {
+    "gameId": "a5e9a885b80fd750cb82216c6a5c8b290dabe1c15bb912921fcd754750bcb220",
+    "readyFromFirstRelayMessageMs": 72150,
+    "startupIncludingFundingConfirmationMs": 96827.45
+  },
+  "intermediateRuns": [
+    {
+      "gameId": "f4143eca29ea77a935d35bc9620fdb21a877d94c8225a73dee6256f68f404088",
+      "preparationMs": 41483.665,
+      "startupIncludingFundingConfirmationMs": 71662.06,
+      "status": "PASS",
+      "inGameBroadcastAttempts": 0
+    },
+    {
+      "gameId": "a8f787464bed4c21c8dbfd136df3abf5b0370ba09e0bd24dcecee09e39b7c2d8",
+      "preparationMs": 33641.51,
+      "startupIncludingFundingConfirmationMs": 68739.025,
+      "status": "PASS",
+      "inGameBroadcastAttempts": 0
+    }
+  ],
+  "limitations": [
+    "Initial funding confirmation depends on block timing.",
+    "Dealer retries vary between runs; readiness and tree preparation are reported separately.",
+    "Two players share one computer; these are development measurements, not cross-device latency guarantees.",
+    "Total startup is not yet below 30 seconds.",
+    "One full cooperative hand; this does not qualify next-hand retirement or forced exit."
+  ]
+}

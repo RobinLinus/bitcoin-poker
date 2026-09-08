@@ -10,41 +10,50 @@
     />
     <title>Bitcoin Poker</title>
     <link rel="stylesheet" href="/src/ui/styles.css" />
-    <script type="module" src="/src/main.js"></script>
   </head>
-  <body>
+  <body class="entry-pending">
     <div class="noise" aria-hidden="true"></div>
     <header class="topbar">
       <div class="brand" aria-label="Bitcoin Poker">
         <span class="brand-mark">BP<span>/</span>52</span>
         <span class="brand-name">Bitcoin Poker</span>
       </div>
-      <div class="network-pill" title="Game mode">
-        <span class="pulse-dot" aria-hidden="true"></span>
-        <span id="deployment-name">Loading network…</span>
-      </div>
     </header>
 
     <main>
+      <section id="nickname-onboarding" class="nickname-card" aria-labelledby="nickname-title">
+        <h1 id="nickname-title">Choose your nickname</h1>
+        <form id="nickname-form">
+          <label class="field-label" for="nickname">Nickname</label>
+          <input id="nickname" class="text-field player-name-input" required maxlength="24" autocomplete="nickname" placeholder="Your name at the table" />
+          <button class="primary-button" type="submit" disabled>Continue</button>
+        </form>
+      </section>
+      <details id="wallet-panel" class="wallet-panel hidden">
+        <summary>Wallet <strong id="wallet-balance">—</strong></summary>
+        <div class="wallet-content">
+          <h2 class="wallet-onboarding-title">Loading wallet…</h2>
+          <p id="wallet-status">Loading wallet…</p>
+          <progress class="progress-indicator" id="wallet-progress" aria-label="Loading wallet"></progress>
+          <div class="wallet-funding-details">
+          <label class="field-label" for="wallet-address">Receive</label>
+          <div class="copy-row"><input id="wallet-address" readonly aria-label="Wallet receiving address" /><button id="copy-wallet" type="button">Copy</button></div>
+          <p class="fine-print">Fund this address using the <a href="https://faucet.mutinynet.com/" target="_blank" rel="noopener noreferrer">MutinyNet faucet</a>.</p>
+          </div>
+          <button id="wallet-retry" type="button" class="wallet-refresh hidden">Try again</button>
+          <p class="fine-print">Stored in this browser. No backup.</p>
+        </div>
+      </details>
       <section id="lobby" class="lobby-shell">
         <div class="hero-copy">
           <h1>Heads-up poker.</h1>
           <p class="hero-body">
-            A complete two-player game with a fair deck—no trusted dealer.
+            Invite a friend to a private game of Texas hold’em.
           </p>
         </div>
 
         <div class="entry-card">
-          <div class="entry-tabs" role="tablist" aria-label="Table entry">
-            <button id="create-tab" class="tab active" role="tab" aria-selected="true" type="button">
-              Create table
-            </button>
-            <button id="join-tab" class="tab" role="tab" aria-selected="false" type="button">
-              Join table
-            </button>
-          </div>
-
-          <div id="create-panel" class="entry-panel" role="tabpanel">
+          <div id="create-panel" class="entry-panel">
             <div class="entry-intro">
               <span class="card-glyph" aria-hidden="true">A♠</span>
               <div>
@@ -54,69 +63,60 @@
             </div>
             <div class="terms-preview">
               <div><span>Game</span><strong>Fixed-limit hold’em</strong></div>
-              <div id="practice-stakes-row"><span>Stakes</span><strong>Practice chips</strong></div>
+              <div id="stakes-row"><span>Stakes</span><strong>₿20,000 each</strong></div>
             </div>
             <button id="create-game" class="primary-button" type="button">
               Create table
               <span aria-hidden="true">→</span>
             </button>
-            <p id="practice-mode-copy" class="fine-print">Demo only—no real money is used.</p>
-          </div>
-
-          <div id="join-panel" class="entry-panel hidden" role="tabpanel">
-            <div class="entry-intro">
-              <span class="card-glyph red" aria-hidden="true">K♥</span>
-              <div>
-                <h2>Join a game</h2>
-                <p>Open or paste the private link sent by the host.</p>
-              </div>
-            </div>
-            <label class="field-label" for="invite-value">Private invite</label>
-            <input
-              id="invite-value"
-              class="text-field"
-              type="text"
-              spellcheck="false"
-              autocomplete="off"
-              placeholder="Paste invite link"
-            />
-            <button id="join-game" class="primary-button" type="button">
-              Join table
-              <span aria-hidden="true">→</span>
-            </button>
-            <p id="join-hint" class="fine-print">The link can only fill one guest seat.</p>
+            <p id="mode-copy" class="fine-print">each player funds their buy-in from their wallet.</p>
           </div>
 
           <p id="lobby-error" class="error-message hidden" role="alert"></p>
+          <button id="join-retry" class="primary-button hidden" type="button">Try again</button>
+          <details id="lobby-error-details" class="hidden"><summary>Error details</summary><pre id="lobby-error-technical"></pre></details>
         </div>
       </section>
 
       <section id="game" class="game-shell hidden" aria-label="Poker table">
-        <div class="game-heading">
-          <h1>Heads-up table</h1>
-        </div>
-
         <div class="game-layout">
           <div class="table-column">
+            <div class="blind-level" aria-label="Table options and blinds">
+              <span>Blinds</span>
+              <strong id="table-small-blind" title="Small blind">—</strong>
+              <span aria-hidden="true">/</span>
+              <strong id="table-big-blind" title="Big blind">—</strong>
+            </div>
             <div class="poker-table">
               <div class="felt-ring" aria-hidden="true"></div>
+              <section id="table-preparation" class="table-preparation hidden" aria-labelledby="preparation-title">
+                <h2 id="preparation-title">Getting the table ready…</h2>
+                <progress class="progress-indicator" id="preparation-progress" max="100" aria-label="Table preparation"></progress>
+              </section>
+
+              <div id="opponent-bet" class="table-bet table-bet-opponent hidden" role="status">
+                <span class="chip-stack" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span><strong id="opponent-bet-amount"></strong></span>
+              </div>
 
               <div class="seat seat-opponent">
                 <div class="avatar" id="opponent-avatar">G</div>
                 <div class="seat-copy">
                   <strong id="opponent-name">Guest</strong>
                   <span id="opponent-state">Waiting to join</span>
-                  <span id="opponent-stack" class="seat-stack">Stack · —</span>
+                  <span id="opponent-stack" class="seat-stack">—</span>
                 </div>
+                <span id="opponent-dealer" class="dealer-button hidden" role="img" aria-label="Dealer" title="Dealer">D</span>
                 <span id="opponent-blind" class="blind-marker hidden" aria-label="Opponent blind"></span>
-                <div class="card-pair mini" aria-hidden="true">
-                  <span></span><span></span>
+                <div id="opponent-hole-cards" class="card-pair mini" aria-label="Opponent cards not shown">
+                  <span id="opponent-card-0"></span><span id="opponent-card-1"></span>
                 </div>
               </div>
 
               <div class="pot-display">
                 <span>Pot</span>
                 <strong id="game-pot">—</strong>
+                <span class="chip-stack pot-chips" aria-hidden="true"><i></i><i></i><i></i></span>
               </div>
 
               <div class="community-cards" aria-label="Community cards not dealt">
@@ -127,79 +127,36 @@
                 <span id="board-card-4" class="playing-card empty">5</span>
               </div>
 
-              <div class="blind-level" aria-label="Table blinds">
-                <span>
-                  <small>Small blind</small>
-                  <strong id="table-small-blind">Loading…</strong>
-                </span>
-                <span>
-                  <small>Big blind</small>
-                  <strong id="table-big-blind">Loading…</strong>
-                </span>
-              </div>
 
-              <div id="table-message" class="table-message">
-                <div role="status" aria-live="polite" aria-atomic="true">
-                  <span id="table-phase">Waiting for opponent</span>
-                  <small id="table-detail">Share the private link to fill the table.</small>
-                </div>
-                <button id="broadcast-refund" class="secondary-button table-primary-action hidden" type="button" disabled>
-                  Return funds
-                </button>
-                <button id="next-hand" class="secondary-button table-primary-action hidden" type="button">
-                  Next hand
-                </button>
-              </div>
 
-              <section id="funding-card" class="panel-card funding-card table-funding-card hidden">
-                <div class="panel-title-row">
-                  <div>
-                    <p id="funding-network-label" class="eyebrow">Your seat</p>
-                    <h2>Fund your seat</h2>
-                  </div>
-                  <span class="secure-mark">Test coins only</span>
+            <section id="invite-card" class="panel-card table-invite-card" role="dialog" aria-labelledby="invite-heading">
+              <div class="panel-title-row">
+                <div>
+                  <h2 id="invite-heading">Invite a player</h2>
                 </div>
-                <p>Send one payment of exactly this amount.</p>
-                <div class="funding-amount">
-                  <span>Exact amount</span>
-                  <strong id="funding-amount">Loading…</strong>
-                </div>
-                <div class="funding-blinds" aria-label="Table blinds">
-                  <span>Small blind <strong id="funding-small-blind">Loading…</strong></span>
-                  <span>Big blind <strong id="funding-big-blind">Loading…</strong></span>
-                </div>
-                <label class="field-label compact-label" for="funding-address">Your deposit address</label>
-                <div class="copy-row funding-address-row">
-                  <input id="funding-address" readonly aria-label="Deposit address" />
-                  <button id="copy-funding-address" type="button">Copy</button>
-                </div>
-                <p id="funding-state" class="funding-state" aria-live="polite">
-                  Preparing your deposit address…
-                </p>
-                <div class="staging-inputs" aria-live="polite">
-                  <span>
-                    Your deposit
-                    <strong id="funding-local-input" class="staging-input-state">Not confirmed</strong>
-                  </span>
-                  <span>
-                    Opponent deposit
-                    <strong id="funding-peer-input" class="staging-input-state">Waiting</strong>
-                  </span>
-                </div>
-                <div class="funding-links">
-                  <a id="funding-uri" href="#">Open wallet</a>
-                </div>
-                <p class="microcopy funding-warning">
-                  The game starts automatically after both deposits confirm.
-                </p>
-              </section>
+              </div>
+              <p>Send this link to the friend you want to play with.</p>
+              <div class="copy-row">
+                <input id="share-link" readonly aria-label="Private invite link" />
+                <button id="copy-link" type="button">Copy</button>
+              </div>
+              <p id="copy-state" class="microcopy">Anyone with this link can take the open seat.</p>
+            </section>
+
+
+
+              <div id="local-bet" class="table-bet table-bet-local hidden" role="status">
+                <span class="chip-stack" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span><strong id="local-bet-amount"></strong></span>
+              </div>
 
               <div class="seat seat-local">
                 <div class="avatar local" id="local-avatar">H</div>
                 <div class="seat-copy">
                   <strong id="local-name">You</strong>
-                  <span id="local-stack" class="seat-stack">Stack · —</span>
+                  <span id="local-stack" class="seat-stack">—</span>
                 </div>
+                <span id="local-dealer" class="dealer-button hidden" role="img" aria-label="Dealer" title="Dealer">D</span>
                 <span id="local-blind" class="blind-marker hidden" aria-label="Your blind"></span>
                 <div id="local-hole-cards" class="card-pair mini face-down" aria-label="Hole cards not dealt">
                   <span id="hole-card-0"></span><span id="hole-card-1"></span>
@@ -207,32 +164,45 @@
               </div>
             </div>
 
+            <div class="table-controls">
+            <label class="sit-out-control">
+              <input id="sit-out-next-hand" type="checkbox" />
+              <span>Sit out next hand</span>
+            </label>
             <div id="action-bar" class="action-bar hidden" aria-label="Poker actions">
+              <div id="table-message" class="table-message">
+                <div role="status" aria-live="polite" aria-atomic="true">
+                  <span id="table-phase">Waiting for opponent</span>
+                  <progress id="table-status-progress" class="progress-indicator" aria-label="Action in progress"></progress>
+                  <small id="table-detail">Share the invite link with your opponent.</small>
+                </div>
+
+              </div>
+
+              <button id="leave-table" class="secondary-button hidden" type="button">Leave table</button>
+              <button id="back-to-lobby" class="secondary-button hidden" type="button">Back to lobby</button>
               <div class="action-buttons">
                 <button id="action-fold" disabled type="button">Fold</button>
                 <button id="action-check" disabled type="button">Check</button>
                 <button id="action-call" disabled type="button">Call</button>
-                <button id="action-aggressive" disabled class="accent" type="button">Bet / Raise</button>
-                <button id="action-timeout" disabled class="hidden" type="button">Claim timeout</button>
+                <button id="action-aggressive" disabled type="button">Bet / Raise</button>
               </div>
+            </div>
             </div>
           </div>
 
           <aside class="side-panel">
-            <section id="invite-card" class="panel-card">
-              <div class="panel-title-row">
-                <div>
-                  <p class="eyebrow">Opponent seat</p>
-                  <h2>Invite a player</h2>
-                </div>
-              </div>
-              <p>Only someone with this private link can claim the second seat.</p>
-              <div class="copy-row">
-                <input id="share-link" readonly aria-label="Private invite link" />
-                <button id="copy-link" type="button">Copy</button>
-              </div>
-              <p id="copy-state" class="microcopy">Keep it in a private channel.</p>
+            <section id="chain-panel" class="panel-card">
+              <button id="resume-connection" class="secondary-button hidden" type="button">Reconnect</button>
+              <details class="network-details">
+                <summary>Network details</summary>
+                <p id="chain-state">Waiting for players.</p>
+                <p class="fine-print">If your opponent takes longer than 12 blocks, the hand ends automatically. Keep the table open; block times vary.</p>
+                <ol id="table-transactions" class="table-transactions"></ol>
+                <pre id="game-error-detail" class="hidden"></pre>
+              </details>
             </section>
+
 
           </aside>
         </div>
@@ -240,5 +210,6 @@
       </section>
     </main>
 
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

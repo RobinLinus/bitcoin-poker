@@ -1,0 +1,179 @@
+{
+  "description": "Three isolated local browser trials; four crypto workers, local persistence, no relay/network latency. Fresh coordinator per trial; browser/compiler caches may be warm.",
+  "trials": [
+    {
+      "type": "result",
+      "ok": true,
+      "full": true,
+      "workers": 4,
+      "mode": "parallel",
+      "wasmBytes": 2236643,
+      "wasmSha256": "efe017570fc042cdce7d5417caec5fad5c193ec7a5f1779348c3bcd180748b7b",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 15,
+      "stackBytesPerWorker": 33554432,
+      "nodes": 56132,
+      "requests": 56161,
+      "signatures": 54855,
+      "revealPackages": 1306,
+      "adaptorSignatures": 67912,
+      "inventoryBinding": "d7905b889d0d4a7d0b1f79a6751494dab06913737174ef1fb4e79b253f5dc75c",
+      "inventoryDigest": "47139bb56b6d3c638d98fea1aaa15adf1215a4c39d7b8503865214afbf3e4fad",
+      "initialSetupMs": 26389.400000095367,
+      "setupWasmBytes": 374079488,
+      "checkpointFailureChecks": 5,
+      "localResumeMs": 70.70000004768372,
+      "importRecoveryMs": 17399.200000047684,
+      "setupTargetMet": true,
+      "snapshotBytes": 8416186,
+      "checkpointBytes": 12512289,
+      "responseBytes": 7966792,
+      "timingsMs": {
+        "loadAndCompile": 7.5,
+        "dealerSetup": 1265.2000000476837,
+        "graphCompilation": 200.39999985694885,
+        "transactionInventory": 9600.700000047684,
+        "workerInitialization": 60.700000047683716,
+        "cosigning": 15162.699999809265,
+        "checkpointPersistence": 29.59999990463257,
+        "localResume": 70.70000004768372,
+        "import_dealerSetup": 1240.5999999046326,
+        "import_graphCompilation": 197.90000009536743,
+        "importInventory": 11265.900000095367,
+        "import_transactionInventory": 9827.299999952316,
+        "importVerification": 6133.299999952316
+      },
+      "signingCpuMs": {
+        "signMs": [
+          18578.800001382828,
+          18061.49999809265
+        ],
+        "verifyMs": [
+          10973.000000953674,
+          11996.19999909401
+        ]
+      },
+      "peakWasmBytes": 474480640,
+      "elapsedMs": 43947.200000047684,
+      "trial": 1,
+      "constructionTargetMet": true,
+      "recordedAt": "2026-09-05T08:40:07.863Z"
+    },
+    {
+      "type": "result",
+      "ok": true,
+      "full": true,
+      "workers": 4,
+      "mode": "parallel",
+      "wasmBytes": 2236643,
+      "wasmSha256": "efe017570fc042cdce7d5417caec5fad5c193ec7a5f1779348c3bcd180748b7b",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 15,
+      "stackBytesPerWorker": 33554432,
+      "nodes": 56132,
+      "requests": 56161,
+      "signatures": 54855,
+      "revealPackages": 1306,
+      "adaptorSignatures": 67912,
+      "inventoryBinding": "d7905b889d0d4a7d0b1f79a6751494dab06913737174ef1fb4e79b253f5dc75c",
+      "inventoryDigest": "47139bb56b6d3c638d98fea1aaa15adf1215a4c39d7b8503865214afbf3e4fad",
+      "initialSetupMs": 26933,
+      "setupWasmBytes": 374079488,
+      "checkpointFailureChecks": 5,
+      "localResumeMs": 71.79999995231628,
+      "importRecoveryMs": 17519.900000095367,
+      "setupTargetMet": true,
+      "snapshotBytes": 8416186,
+      "checkpointBytes": 12512289,
+      "responseBytes": 7966792,
+      "timingsMs": {
+        "loadAndCompile": 4,
+        "dealerSetup": 1253.7000000476837,
+        "graphCompilation": 206.29999995231628,
+        "transactionInventory": 9819.600000143051,
+        "workerInitialization": 35.200000047683716,
+        "cosigning": 15529.400000095367,
+        "checkpointPersistence": 22.600000143051147,
+        "localResume": 71.79999995231628,
+        "import_dealerSetup": 1239.5,
+        "import_graphCompilation": 195.79999995231628,
+        "importInventory": 11293.400000095367,
+        "import_transactionInventory": 9858.100000143051,
+        "importVerification": 6226.5
+      },
+      "signingCpuMs": {
+        "signMs": [
+          19025.49999976158,
+          18468.900000810623
+        ],
+        "verifyMs": [
+          11229.099999904633,
+          12313.60000038147
+        ]
+      },
+      "peakWasmBytes": 474480640,
+      "elapsedMs": 44614.09999990463,
+      "trial": 2,
+      "constructionTargetMet": true,
+      "recordedAt": "2026-09-05T08:40:52.489Z"
+    },
+    {
+      "type": "result",
+      "ok": true,
+      "full": true,
+      "workers": 4,
+      "mode": "parallel",
+      "wasmBytes": 2236643,
+      "wasmSha256": "efe017570fc042cdce7d5417caec5fad5c193ec7a5f1779348c3bcd180748b7b",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "hardwareConcurrency": 15,
+      "stackBytesPerWorker": 33554432,
+      "nodes": 56132,
+      "requests": 56161,
+      "signatures": 54855,
+      "revealPackages": 1306,
+      "adaptorSignatures": 67912,
+      "inventoryBinding": "d7905b889d0d4a7d0b1f79a6751494dab06913737174ef1fb4e79b253f5dc75c",
+      "inventoryDigest": "47139bb56b6d3c638d98fea1aaa15adf1215a4c39d7b8503865214afbf3e4fad",
+      "initialSetupMs": 27256.799999952316,
+      "setupWasmBytes": 374079488,
+      "checkpointFailureChecks": 5,
+      "localResumeMs": 73.90000009536743,
+      "importRecoveryMs": 17600.200000047684,
+      "setupTargetMet": true,
+      "snapshotBytes": 8416186,
+      "checkpointBytes": 12512289,
+      "responseBytes": 7966792,
+      "timingsMs": {
+        "loadAndCompile": 4.900000095367432,
+        "dealerSetup": 1256,
+        "graphCompilation": 207,
+        "transactionInventory": 9904.100000143051,
+        "workerInitialization": 36.90000009536743,
+        "cosigning": 15757.399999856949,
+        "checkpointPersistence": 27.700000047683716,
+        "localResume": 73.90000009536743,
+        "import_dealerSetup": 1243.2000000476837,
+        "import_graphCompilation": 192,
+        "importInventory": 11324,
+        "import_transactionInventory": 9888.799999952316,
+        "importVerification": 6276.200000047684
+      },
+      "signingCpuMs": {
+        "signMs": [
+          19325.399997234344,
+          18750.10000061989
+        ],
+        "verifyMs": [
+          11401.30000257492,
+          12503.300000667572
+        ]
+      },
+      "peakWasmBytes": 474480640,
+      "elapsedMs": 45013.200000047684,
+      "trial": 3,
+      "constructionTargetMet": true,
+      "recordedAt": "2026-09-05T08:41:37.510Z"
+    }
+  ]
+}

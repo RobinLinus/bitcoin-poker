@@ -1,6 +1,6 @@
 //! Opaque, capability-authenticated message relay for BP52 clients.
 //!
-//! The relay assigns durable per-game cursors and stores uninterpreted message
+//! The relay assigns transient per-room cursors and stores uninterpreted message
 //! bytes. It deliberately does not decode BP52 dealing, chain, transaction, or
 //! secret-key data. Clients remain responsible for authenticating protocol
 //! messages, end-to-end encryption, validation, and durable local recovery.
@@ -12,13 +12,12 @@
 //! It is not, and must never be substituted for, the descriptor-bound
 //! dlog deal or chain `game_id` computed later by protocol code.
 //!
-//! Hard live-storage quotas and a 24-hour inactivity expiry bound disk use,
+//! Hard live-storage quotas and a 24-hour inactivity expiry bound memory use,
 //! but this process is not an Internet edge. A public deployment must still
 //! impose IP-aware request and connection rate limits at its HTTPS proxy.
 
 #![forbid(unsafe_code)]
 
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -36,7 +35,7 @@ use axum::{Json, Router};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use rusqlite::{
-    Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
+    Connection, OptionalExtension, Transaction, TransactionBehavior, params,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -54,7 +53,9 @@ const INVITE_SECRET_TAG: &[u8] = b"BP52/relay/invite-secret/v1";
 const GAME_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_RELAY_GAMES: u64 = 10_000;
 const MAX_RELAY_MESSAGES: u64 = 100_000;
-const MAX_RELAY_BYTES: u64 = 1024 * 1024 * 1024;
+// Channel preparation retains tens of MiB per room for the 24-hour replay window.
+// Reserve shared capacity for 32 rooms at the per-game maximum.
+const MAX_RELAY_BYTES: u64 = 32 * MAX_GAME_BYTES as u64;
 
 /// Maximum decoded payload accepted in one opaque relay message.
 pub const MAX_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
@@ -63,9 +64,10 @@ pub const MAX_GAME_BYTES: usize = 256 * 1024 * 1024;
 /// Maximum messages retained for one game.
 pub const MAX_GAME_MESSAGES: u64 = 8_192;
 
-/// Opened relay service backed by one durable SQLite database.
+/// Opened relay service backed by a transient in-memory delivery queue.
 #[derive(Clone)]
 pub struct RelayServer {
+    changes: tokio::sync::broadcast::Sender<[u8;32]>,
     database: Database,
     limits: Limits,
     deployment: Arc<BrowserDeploymentConfig>,
@@ -73,24 +75,17 @@ pub struct RelayServer {
 }
 
 impl RelayServer {
-    /// Open or create a relay database using an explicit, Rust-validated deployment.
+    /// Create an in-memory relay using an explicit, Rust-validated deployment.
     ///
     /// # Errors
     ///
     /// Returns a redacted initialization error if configuration or database setup fails.
     pub fn open_with_deployment(
-        path: impl AsRef<Path>,
         deployment: &DeploymentConfig,
     ) -> Result<Self, RelayBuildError> {
         let deployment = resolve_deployment(deployment)?;
         let security_headers = SecurityHeaders::new(&deployment)?;
-        let mut connection = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
-        )
-        .map_err(|_| RelayBuildError::Database)?;
+        let mut connection = Connection::open_in_memory().map_err(|_| RelayBuildError::Database)?;
         configure_database(&mut connection)?;
         let now = now_ms().map_err(|_| RelayBuildError::Database)?;
         connection
@@ -100,6 +95,7 @@ impl RelayServer {
             )
             .map_err(|_| RelayBuildError::Database)?;
         Ok(Self {
+            changes: tokio::sync::broadcast::channel(256).0,
             database: Database {
                 connection: Arc::new(Mutex::new(connection)),
             },
@@ -116,6 +112,16 @@ impl RelayServer {
     pub fn router(&self) -> Router {
         Router::new()
             .route("/", get(index_page))
+            .route("/assets/{version}/{*path}", get(assets::versioned_asset))
+            .route("/tools/onchain-e2e", get(assets::onchain_page))
+            .route("/tools/channel-e2e", get(assets::channel_e2e_page))
+            .route("/tools/relay-e2e", get(assets::relay_e2e_page))
+            .route("/src/onchain/{name}", get(assets::onchain_asset))
+            .route("/wasm/session.wasm", get(assets::session_wasm))
+            .route(
+                "/src/storage/preparation-checkpoint-store.js",
+                get(assets::preparation_store_script),
+            )
             .route("/src/main.js", get(bootstrap_script))
             .route("/src/practice/render-table.js", get(render_table_script))
             .route("/src/funding/engine.js", get(funding_engine_script))
@@ -169,8 +175,12 @@ impl RelayServer {
                 "/src/bitcoin/transaction-inspector.js",
                 get(transaction_runtime_script),
             )
+            .route("/api/v1/socket", get(socket::upgrade))
             .route("/api/v1/config", get(get_deployment_config))
             .route("/api/v1/games", post(create_game))
+            .route("/api/v1/games/{game_id}/ack", post(routes::ack_messages))
+            .route("/api/v1/games/{game_id}/poll", post(routes::poll_session))
+            .route("/api/v1/games/{game_id}/exchange", post(routes::exchange_session))
             .route("/api/v1/games/{game_id}", get(get_game))
             .route("/api/v1/games/{game_id}/join", post(join_game))
             .route(
@@ -183,6 +193,7 @@ impl RelayServer {
                 add_security_headers,
             ))
             .with_state(AppState {
+                changes: self.changes.clone(),
                 database: self.database.clone(),
                 limits: self.limits,
                 deployment: Arc::clone(&self.deployment),
@@ -256,6 +267,7 @@ impl Limits {
 
 #[derive(Clone)]
 struct AppState {
+    changes: tokio::sync::broadcast::Sender<[u8;32]>,
     database: Database,
     limits: Limits,
     deployment: Arc<BrowserDeploymentConfig>,
@@ -298,7 +310,7 @@ struct JoinGameRequest {
     invite_secret: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PostMessageRequest {
     message_id: String,
@@ -333,6 +345,8 @@ struct PostMessageResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PollResponse {
+    epoch: String,
+    joined: bool,
     messages: Vec<MessageResponse>,
     next_cursor: u64,
 }
@@ -344,7 +358,8 @@ struct MessageResponse {
     message_id: String,
     sender: &'static str,
     kind: String,
-    payload: String,
+    #[serde(serialize_with="serialize_payload")]
+    payload: Vec<u8>,
     created_at_ms: u64,
 }
 
@@ -445,7 +460,7 @@ async fn add_security_headers(
 ) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.entry(CACHE_CONTROL).or_insert(HeaderValue::from_static("no-store"));
     headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     headers.insert(
@@ -649,3 +664,14 @@ mod tests;
 pub mod config;
 use config::resolve_deployment;
 pub use config::{BrowserDeploymentConfig, DeploymentConfig};
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AckRequest { cursor: u64 }
+
+mod socket;
+mod wire;
+
+fn serialize_payload<S:serde::Serializer>(value:&[u8], serializer:S)->Result<S::Ok,S::Error> {
+    serializer.serialize_str(&STANDARD.encode(value))
+}

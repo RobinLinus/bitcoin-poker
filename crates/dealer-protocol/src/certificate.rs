@@ -194,7 +194,7 @@ fn decode_envelope(bytes: &[u8]) -> Result<Envelope, ProtocolError> {
     Ok(envelope)
 }
 
-fn decode_config(reader: &mut Reader<'_>) -> Result<GameConfig, ProtocolError> {
+pub(crate) fn decode_config(reader: &mut Reader<'_>) -> Result<GameConfig, ProtocolError> {
     Ok(GameConfig {
         network_genesis: reader.array().map_err(|_| ProtocolError::Wire)?,
         session_anchor: reader.array().map_err(|_| ProtocolError::Wire)?,
@@ -205,7 +205,7 @@ fn decode_config(reader: &mut Reader<'_>) -> Result<GameConfig, ProtocolError> {
     })
 }
 
-fn decode_accepted(reader: &mut Reader<'_>) -> Result<AcceptedDeal, ProtocolError> {
+pub(crate) fn decode_accepted(reader: &mut Reader<'_>) -> Result<AcceptedDeal, ProtocolError> {
     let body = AcceptedDealBody {
         version: reader.u16().map_err(|_| ProtocolError::Wire)?,
         params_id: reader.array().map_err(|_| ProtocolError::Wire)?,

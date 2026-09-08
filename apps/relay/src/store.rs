@@ -9,18 +9,6 @@ pub(super) fn configure_database(connection: &mut Connection) -> Result<(), Rela
         .and_then(|()| connection.pragma_update(None, "synchronous", "FULL"))
         .and_then(|()| connection.pragma_update(None, "trusted_schema", "OFF"))
         .map_err(|_| RelayBuildError::Database)?;
-    let selected: String = connection
-        .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
-        .map_err(|_| RelayBuildError::Database)?;
-    if !selected.eq_ignore_ascii_case("wal") {
-        return Err(RelayBuildError::Database);
-    }
-    let schema_version: i64 = connection
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(|_| RelayBuildError::Database)?;
-    if !(0..=1).contains(&schema_version) {
-        return Err(RelayBuildError::Database);
-    }
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_| RelayBuildError::Database)?;
@@ -28,9 +16,12 @@ pub(super) fn configure_database(connection: &mut Connection) -> Result<(), Rela
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS relay_games (
                 game_id BLOB PRIMARY KEY NOT NULL CHECK(length(game_id) = 32),
-                player_one_hash BLOB NOT NULL CHECK(length(player_one_hash) = 32),
+                epoch BLOB NOT NULL DEFAULT (randomblob(16)),
+                player_one_hash BLOB CHECK(player_one_hash IS NULL OR length(player_one_hash) = 32),
                 player_two_hash BLOB CHECK(player_two_hash IS NULL OR length(player_two_hash) = 32),
                 invite_hash BLOB NOT NULL CHECK(length(invite_hash) = 32),
+                ack_one INTEGER NOT NULL DEFAULT 0,
+                ack_two INTEGER NOT NULL DEFAULT 0,
                 last_cursor INTEGER NOT NULL DEFAULT 0 CHECK(last_cursor >= 0),
                 message_count INTEGER NOT NULL DEFAULT 0 CHECK(message_count >= 0),
                 message_bytes INTEGER NOT NULL DEFAULT 0 CHECK(message_bytes >= 0),
@@ -44,7 +35,8 @@ pub(super) fn configure_database(connection: &mut Connection) -> Result<(), Rela
                 message_id BLOB NOT NULL CHECK(length(message_id) = 32),
                 sender INTEGER NOT NULL CHECK(sender IN (0, 1)),
                 kind TEXT NOT NULL CHECK(length(kind) BETWEEN 1 AND 32),
-                payload BLOB NOT NULL CHECK(length(payload) <= 16777216),
+                payload_hash BLOB NOT NULL,
+                payload BLOB CHECK(length(payload) <= 16777216),
                 created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
                 PRIMARY KEY(game_id, cursor),
                 UNIQUE(game_id, message_id),
@@ -75,14 +67,14 @@ pub(super) fn create_game_db(
     cleanup_expired(&transaction, now)?;
     let existing = transaction
         .query_row(
-            "SELECT player_one_hash, invite_hash, player_two_hash IS NOT NULL, last_cursor
+            "SELECT player_one_hash, invite_hash, player_two_hash, last_cursor
              FROM relay_games WHERE game_id = ?1",
             params![game_id.as_slice()],
             |row| {
                 Ok((
-                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(0)?,
                     row.get::<_, Vec<u8>>(1)?,
-                    row.get::<_, bool>(2)?,
+                    row.get::<_, Option<Vec<u8>>>(2)?,
                     row.get::<_, i64>(3)?,
                 ))
             },
@@ -90,8 +82,8 @@ pub(super) fn create_game_db(
         .optional()
         .map_err(|_| ApiError::internal())?;
     let (joined, last_cursor, created) =
-        if let Some((stored_player, stored_invite, joined, cursor)) = existing {
-            if !constant_time_eq(&stored_player, &player_hash)
+        if let Some((stored_player, stored_invite, peer, cursor)) = existing {
+            if stored_player.as_deref().is_some_and(|stored| !constant_time_eq(stored, &player_hash))
                 || !constant_time_eq(&stored_invite, &invite_hash)
             {
                 return Err(ApiError::conflict(
@@ -99,13 +91,16 @@ pub(super) fn create_game_db(
                     "gameId is already bound to different capabilities",
                 ));
             }
+            if peer.as_deref().is_some_and(|stored| constant_time_eq(stored, &player_hash)) {
+                return Err(ApiError::bad_request("players must use independent capabilities"));
+            }
             transaction
                 .execute(
-                    "UPDATE relay_games SET expires_at_ms = ?2 WHERE game_id = ?1",
-                    params![game_id.as_slice(), checked_i64(expiry_from(now)?)?],
+                    "UPDATE relay_games SET expires_at_ms = ?2, player_one_hash = ?3, joined_at_ms = CASE WHEN player_two_hash IS NOT NULL THEN COALESCE(joined_at_ms, ?4) ELSE NULL END WHERE game_id = ?1",
+                    params![game_id.as_slice(), checked_i64(expiry_from(now)?)?, player_hash.as_slice(), checked_i64(now)?],
                 )
                 .map_err(|_| ApiError::internal())?;
-            (joined, checked_u64(cursor)?, false)
+            (peer.is_some(), checked_u64(cursor)?, false)
         } else {
             let game_count: i64 = transaction
                 .query_row("SELECT COUNT(*) FROM relay_games", [], |row| row.get(0))
@@ -156,7 +151,7 @@ pub(super) fn join_game_db(
             params![game_id.as_slice()],
             |row| {
                 Ok((
-                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(0)?,
                     row.get::<_, Option<Vec<u8>>>(1)?,
                     row.get::<_, Vec<u8>>(2)?,
                     row.get::<_, i64>(3)?,
@@ -164,13 +159,18 @@ pub(super) fn join_game_db(
             },
         )
         .optional()
-        .map_err(|_| ApiError::internal())?
-        .ok_or_else(ApiError::unauthorized)?;
-    let (player_one, player_two, stored_invite, last_cursor) = existing;
+        .map_err(|_| ApiError::internal())?;
+    let Some((player_one, player_two, stored_invite, last_cursor)) = existing else {
+        let count: i64 = transaction.query_row("SELECT COUNT(*) FROM relay_games", [], |row| row.get(0)).map_err(|_| ApiError::internal())?;
+        if checked_u64(count)? >= MAX_RELAY_GAMES { return Err(ApiError::storage_full("relay game limit reached")); }
+        transaction.execute("INSERT INTO relay_games(game_id, player_two_hash, invite_hash, created_at_ms, expires_at_ms) VALUES (?1,?2,?3,?4,?5)", params![game_id.as_slice(), player_hash.as_slice(), invite_hash.as_slice(), checked_i64(now)?, checked_i64(expiry_from(now)?)?]).map_err(|_| ApiError::internal())?;
+        transaction.commit().map_err(|_| ApiError::internal())?;
+        return Ok(GameResponse { game_id: encode_hex(game_id), joined: false, last_cursor: 0 });
+    };
     if !constant_time_eq(&stored_invite, &invite_hash) {
         return Err(ApiError::unauthorized());
     }
-    if constant_time_eq(&player_one, &player_hash) {
+    if player_one.as_deref().is_some_and(|stored| constant_time_eq(stored, &player_hash)) {
         return Err(ApiError::bad_request(
             "joining player must use an independent capability",
         ));
@@ -208,7 +208,7 @@ pub(super) fn join_game_db(
     transaction.commit().map_err(|_| ApiError::internal())?;
     Ok(GameResponse {
         game_id: encode_hex(game_id),
-        joined: true,
+        joined: player_one.is_some(),
         last_cursor: checked_u64(last_cursor)?,
     })
 }
@@ -248,7 +248,7 @@ pub(super) fn post_message_db(
     }
     let existing = transaction
         .query_row(
-            "SELECT cursor, sender, kind, payload
+            "SELECT cursor, sender, kind, payload_hash
              FROM relay_messages WHERE game_id = ?1 AND message_id = ?2",
             params![game_id.as_slice(), message_id.as_slice()],
             |row| {
@@ -265,7 +265,7 @@ pub(super) fn post_message_db(
     if let Some((cursor, sender, stored_kind, stored_payload)) = existing {
         if sender == i64::from(authorization.sender)
             && stored_kind == kind
-            && constant_time_eq(&stored_payload, payload)
+            && constant_time_eq(&stored_payload, &Sha256::digest(payload))
         {
             transaction
                 .execute(
@@ -328,8 +328,8 @@ pub(super) fn post_message_db(
     transaction
         .execute(
             "INSERT INTO relay_messages(
-                game_id, cursor, message_id, sender, kind, payload, created_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                game_id, cursor, message_id, sender, kind, payload, created_at_ms, payload_hash
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 game_id.as_slice(),
                 checked_i64(cursor)?,
@@ -337,7 +337,8 @@ pub(super) fn post_message_db(
                 i64::from(authorization.sender),
                 kind,
                 payload,
-                checked_i64(now)?
+                checked_i64(now)?,
+                Sha256::digest(payload).as_slice()
             ],
         )
         .map_err(|_| ApiError::internal())?;
@@ -377,12 +378,19 @@ pub(super) fn get_messages_db(
     after: u64,
     limit: usize,
 ) -> Result<PollResponse, ApiError> {
-    authorize(connection, game_id, token_hash)?;
+    read_messages_db(connection, game_id, token_hash, after, limit, false)
+}
+
+pub(super) fn read_messages_db(
+    connection: &mut Connection, game_id: [u8;32], token_hash: [u8;32],
+    after: u64, limit: usize, peer_only: bool,
+) -> Result<PollResponse, ApiError> {
+    let authorization = authorize(connection, game_id, token_hash)?;
     let mut statement = connection
         .prepare(
             "SELECT cursor, message_id, sender, kind, payload, created_at_ms
              FROM relay_messages
-             WHERE game_id = ?1 AND cursor > ?2
+             WHERE game_id = ?1 AND cursor > ?2 AND payload IS NOT NULL AND (?4 = 0 OR sender != ?5)
              ORDER BY cursor ASC LIMIT ?3",
         )
         .map_err(|_| ApiError::internal())?;
@@ -390,7 +398,8 @@ pub(super) fn get_messages_db(
         .query(params![
             game_id.as_slice(),
             checked_i64(after)?,
-            i64::try_from(limit).map_err(|_| ApiError::internal())?
+            i64::try_from(limit).map_err(|_| ApiError::internal())?,
+            i64::from(peer_only), i64::from(authorization.sender)
         ])
         .map_err(|_| ApiError::internal())?;
     let mut messages = Vec::with_capacity(limit);
@@ -400,7 +409,7 @@ pub(super) fn get_messages_db(
         let Some(next_page_bytes) = page_bytes.checked_add(payload.len()) else {
             return Err(ApiError::internal());
         };
-        if !messages.is_empty() && next_page_bytes > MAX_PAGE_PAYLOAD_BYTES {
+        if !messages.is_empty() && next_page_bytes > if peer_only {2*1024*1024} else {MAX_PAGE_PAYLOAD_BYTES} {
             break;
         }
         page_bytes = next_page_bytes;
@@ -413,15 +422,21 @@ pub(super) fn get_messages_db(
             message_id: encode_hex(message_id),
             sender,
             kind: row.get(3).map_err(|_| ApiError::internal())?,
-            payload: STANDARD.encode(payload),
+            payload,
             created_at_ms: checked_u64(row.get(5).map_err(|_| ApiError::internal())?)?,
         });
     }
-    let next_cursor = messages.last().map_or(after, |message| message.cursor);
+    let next_cursor = messages.last().map_or(if peer_only {authorization.last_cursor} else {after}, |message| message.cursor);
     Ok(PollResponse {
+        epoch: room_epoch(connection, game_id)?,
+        joined: authorization.joined,
         messages,
         next_cursor,
     })
+}
+
+pub(super) fn room_epoch(connection: &Connection, game_id: [u8;32]) -> Result<String, ApiError> {
+    connection.query_row("SELECT lower(hex(epoch)) FROM relay_games WHERE game_id=?1", params![game_id.as_slice()], |row| row.get(0)).map_err(|_| ApiError::internal())
 }
 
 pub(super) fn immediate_transaction(
@@ -444,4 +459,21 @@ pub(super) fn cleanup_expired(transaction: &Transaction<'_>, now: u64) -> Result
 
 pub(super) fn expiry_from(now: u64) -> Result<u64, ApiError> {
     now.checked_add(GAME_TTL_MS).ok_or_else(ApiError::internal)
+}
+
+pub(super) fn ack_messages_db(connection: &mut Connection, game: [u8;32], token: [u8;32], cursor: u64) -> Result<(), ApiError> {
+    let tx = immediate_transaction(connection)?;
+    let auth = authorize(&tx, game, token)?;
+    if cursor > auth.last_cursor { return Err(ApiError::bad_request("invalid delivery cursor")); }
+    let acknowledged: i64=tx.query_row(if auth.sender==0 {"SELECT ack_one FROM relay_games WHERE game_id=?1"} else {"SELECT ack_two FROM relay_games WHERE game_id=?1"}, params![game.as_slice()], |row| row.get(0)).map_err(|_|ApiError::internal())?;
+    if cursor<=checked_u64(acknowledged)? {return Ok(());}
+
+    let sql = if auth.sender == 0 {
+        "UPDATE relay_games SET ack_one=MAX(ack_one,?2) WHERE game_id=?1"
+    } else { "UPDATE relay_games SET ack_two=MAX(ack_two,?2) WHERE game_id=?1" };
+    tx.execute(sql, params![game.as_slice(), checked_i64(cursor)?]).map_err(|_| ApiError::internal())?;
+    // Keep only a digest for idempotent POST retries. No delivered message contents remain.
+    tx.execute("UPDATE relay_messages SET payload=NULL WHERE game_id=?1 AND cursor <= (SELECT MIN(ack_one,ack_two) FROM relay_games WHERE game_id=?1)", params![game.as_slice()]).map_err(|_| ApiError::internal())?;
+    tx.execute("UPDATE relay_games SET message_bytes=(SELECT COALESCE(SUM(length(payload)),0) FROM relay_messages WHERE game_id=?1), message_count=(SELECT COUNT(*) FROM relay_messages WHERE game_id=?1 AND payload IS NOT NULL) WHERE game_id=?1", params![game.as_slice()]).map_err(|_| ApiError::internal())?;
+    tx.commit().map_err(|_| ApiError::internal())
 }

@@ -112,6 +112,25 @@
         "bp52_transaction_max_error_len",
         "bp52_transaction_inspect"
       ]
+    },
+    {
+      "name": "session",
+      "package": "poker-session-wasm",
+      "cargoFile": "poker_session_wasm.wasm",
+      "publicFile": "session.wasm",
+      "securityBoundary": "local-onchain-player",
+      "maximumBytes": 6291456,
+      "expectedAbiVersion": null,
+      "requiredExports": [
+        "memory",
+        "session_input",
+        "session_call",
+        "session_output_ptr",
+        "session_output_len",
+        "session_error_ptr",
+        "session_error_len",
+        "session_clear"
+      ]
     }
   ]
 }

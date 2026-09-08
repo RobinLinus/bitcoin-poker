@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Full settlement tree benchmark</title>
+<style>body{font:16px system-ui;max-width:960px;margin:40px auto;padding:20px;background:#111820;color:#e2e8ed}button{padding:12px;margin:0 12px 16px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#202b36;padding:20px}h1{font-size:28px}</style>
+<h1>Full settlement tree benchmark</h1>
+<p>Production Rust graph and co-signing in a browser Web Worker. Deterministic test keys, synthetic regtest outpoint, no funds or network broadcast.</p>
+<button id="parallel">Run parallel setup (4 workers)</button><button id="parallel-smoke">Parallel smoke test</button><button id="parallel-qualify">3 parallel trials</button><button id="full">Run full 56,132-node tree</button><button id="smoke">Run 26-node smoke test</button><button id="qualify">Run 3 qualification trials</button><button id="stop" disabled>Stop</button>
+<p id="status">Ready</p><pre id="result">Measures setup, topology, exact transaction inventory, signing and verification, snapshot encoding, inventory reconstruction and recovery. Memory is Wasm linear memory, not total browser RAM. Parallel mode uses four role-owned crypto workers and includes IndexedDB persistence. It reports setup, local reload and untrusted import separately. The serial mode remains a reference. Relay/network latency is excluded.</pre>
+<script type="module" src="/main.js"></script></html>

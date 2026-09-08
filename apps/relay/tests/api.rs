@@ -47,10 +47,10 @@ impl Drop for TemporaryDatabase {
     }
 }
 
-fn open_test_relay(path: &PathBuf) -> Result<RelayServer, Box<dyn std::error::Error>> {
+fn open_test_relay(_path: &PathBuf) -> Result<RelayServer, Box<dyn std::error::Error>> {
     let deployment: DeploymentConfig =
         serde_json::from_str(include_str!("../../../deployments/mutinynet/client.json"))?;
-    Ok(RelayServer::open_with_deployment(path, &deployment)?)
+    Ok(RelayServer::open_with_deployment(&deployment)?)
 }
 
 struct ApiResponse {
@@ -345,7 +345,7 @@ async fn malformed_inputs_and_unknown_fields_are_rejected() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn data_survives_reopening_the_server() -> Result<(), Box<dyn std::error::Error>> {
+async fn rooms_do_not_survive_restarting_the_relay() -> Result<(), Box<dyn std::error::Error>> {
     let temporary = TemporaryDatabase::create()?;
     {
         let app = open_test_relay(&temporary.path)?.router();
@@ -361,8 +361,30 @@ async fn data_survives_reopening_the_server() -> Result<(), Box<dyn std::error::
         None,
     )
     .await?;
-    assert_eq!(status.status, StatusCode::OK);
-    assert_eq!(status.json["joined"], true);
+    assert_eq!(status.status, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn versioned_assets_are_immutable_but_html_and_api_are_fresh() -> Result<(),Box<dyn std::error::Error>> {
+    let temporary=TemporaryDatabase::create()?;
+    let app=open_test_relay(&temporary.path)?.router();
+    let response=app.clone().oneshot(Request::builder().uri("/").body(Body::empty())?).await?;
+    assert_eq!(response.headers()["cache-control"],"no-store");
+    let html=String::from_utf8(to_bytes(response.into_body(),1024*1024).await?.to_vec())?;
+    let base=html.split("data-asset-base=\"").nth(1).ok_or("asset version missing")?.split('"').next().ok_or("asset base missing")?;
+    assert_eq!(base.len(),8+64);
+    assert!(html.contains(&format!("src=\"{base}/src/main.js\"")));
+    let response=app.clone().oneshot(Request::builder().uri(format!("{base}/src/main.js")).body(Body::empty())?).await?;
+    assert_eq!(response.status(),StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"],"public, max-age=31536000, immutable");
+    assert_eq!(to_bytes(response.into_body(),1024*1024).await?.as_ref(),include_bytes!("../../web/src/main.js"));
+    for path in [format!("/assets/{}/src/main.js","0".repeat(64)),format!("{base}/api/v1/config")] {
+        let response=app.clone().oneshot(Request::builder().uri(path).body(Body::empty())?).await?;
+        assert_eq!(response.status(),StatusCode::NOT_FOUND);assert_eq!(response.headers()["cache-control"],"no-store");
+    }
+    let response=app.oneshot(Request::builder().uri("/api/v1/config").body(Body::empty())?).await?;
+    assert_eq!(response.headers()["cache-control"],"no-store");
     Ok(())
 }
 
@@ -473,7 +495,7 @@ async fn legacy_application_assets_are_removed() -> Result<(), Box<dyn std::erro
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
     }
     let bootstrap = include_str!("../../web/src/main.js");
-    assert!(bootstrap.contains("/src/practice/table-controller.js"));
+    assert!(bootstrap.contains("./practice/table-controller.js"));
     assert!(!bootstrap.contains("/app.js"));
     Ok(())
 }
@@ -643,12 +665,11 @@ async fn every_static_app_module_is_served() -> Result<(), Box<dyn std::error::E
 
 #[tokio::test]
 async fn explicit_deployment_controls_config_and_csp() -> Result<(), Box<dyn std::error::Error>> {
-    let temporary = TemporaryDatabase::create()?;
     let mut deployment: DeploymentConfig =
         serde_json::from_str(include_str!("../../../deployments/mutinynet/client.json"))?;
     deployment.chain.esplora_url = "http://127.0.0.1:3999/esplora".to_owned();
     deployment.chain.explorer_url = "http://127.0.0.1:3999".to_owned();
-    let app = RelayServer::open_with_deployment(&temporary.path, &deployment)?.router();
+    let app = RelayServer::open_with_deployment(&deployment)?.router();
     let response = app
         .clone()
         .oneshot(Request::builder().uri("/").body(Body::empty())?)
@@ -666,5 +687,71 @@ async fn explicit_deployment_controls_config_and_csp() -> Result<(), Box<dyn std
         config.json["chain"]["esploraUrl"],
         "http://127.0.0.1:3999/esplora"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn polling_restores_either_seat_after_restart_and_rejects_changed_credentials() -> Result<(), Box<dyn std::error::Error>> {
+    let temporary=TemporaryDatabase::create()?;
+    for order in [["alice","bob"],["bob","alice"]] {
+        // Each new service has an empty transient queue.
+        let app=open_test_relay(&temporary.path)?.router();
+        for (i,sender) in order.iter().enumerate() {
+            let token=if *sender=="alice" {alice_token()} else {bob_token()};
+            let reply=json_request(&app,Method::POST,&format!("/api/v1/games/{}/poll",game_id()),None,Some(json!({"sender":sender,"playerToken":token,"inviteSecret":invite_secret(),"after":271}))).await?;
+            assert_eq!(reply.status,StatusCode::OK);
+            assert_eq!(reply.json["joined"],i==1);
+            assert!(reply.json["epoch"].is_string());
+        }
+        for (sender,token,invite) in [("alice","99".repeat(32),invite_secret()),("bob",bob_token(),"99".repeat(32)),("invalid",bob_token(),invite_secret())] {
+            let reply=json_request(&app,Method::POST,&format!("/api/v1/games/{}/poll",game_id()),None,Some(json!({"sender":sender,"playerToken":token,"inviteSecret":invite,"after":0}))).await?;
+            assert!(reply.status.is_client_error());
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn exchange_batches_skip_echoes_and_acknowledge_only_the_matching_epoch() -> Result<(),Box<dyn std::error::Error>> {
+    let tmp=TemporaryDatabase::create()?;
+    let server=open_test_relay(&tmp.path)?;let app=server.router();
+    let game="91".repeat(32);let host="92".repeat(32);let guest="93".repeat(32);let invite="94".repeat(32);
+    let path=format!("/api/v1/games/{game}/exchange");
+    let body=|sender:&str,token:&str,epoch:Value,after:u64,messages:Vec<Value>|json!({"sender":sender,"playerToken":token,"inviteSecret":invite,"epoch":epoch,"after":after,"messages":messages});
+    let a=json_request(&app,Method::POST,&path,None,Some(body("alice",&host,Value::Null,0,vec![]))).await?;
+    assert_eq!(a.status,StatusCode::OK);let epoch=a.json["epoch"].clone();
+    let b=json_request(&app,Method::POST,&path,None,Some(body("bob",&guest,Value::Null,0,vec![]))).await?;assert_eq!(b.status,StatusCode::OK);
+    let messages=vec![json!({"messageId":"95".repeat(32),"kind":"channel.frame","payload":"AQID"}),json!({"messageId":"96".repeat(32),"kind":"channel.frame","payload":"BAUG"})];
+    let sent=json_request(&app,Method::POST,&path,None,Some(body("alice",&host,epoch.clone(),0,messages.clone()))).await?;
+    assert_eq!(sent.json["accepted"].as_array().unwrap().len(),2);assert_eq!(sent.json["messages"],json!([]));assert_eq!(sent.json["nextCursor"],2);
+    let received=json_request(&app,Method::POST,&path,None,Some(body("bob",&guest,epoch.clone(),0,vec![]))).await?;
+    assert_eq!(received.json["messages"].as_array().unwrap().len(),2);
+    let wrong=json_request(&app,Method::POST,&path,None,Some(body("bob",&host,epoch.clone(),0,vec![]))).await?;assert_eq!(wrong.status,StatusCode::UNAUTHORIZED);
+    let restarted=open_test_relay(&tmp.path)?.router();
+    let stale=json_request(&restarted,Method::POST,&path,None,Some(body("alice",&host,epoch.clone(),200,messages.clone()))).await?;
+    assert_eq!(stale.status,StatusCode::OK);assert_ne!(stale.json["epoch"],epoch);assert_eq!(stale.json["accepted"],json!([]));assert_eq!(stale.json["nextCursor"],0);
+    let new_epoch=stale.json["epoch"].clone();
+    json_request(&restarted,Method::POST,&path,None,Some(body("bob",&guest,Value::Null,0,vec![]))).await?;
+    let replay=json_request(&restarted,Method::POST,&path,None,Some(body("alice",&host,new_epoch.clone(),0,messages.clone()))).await?;assert_eq!(replay.json["accepted"].as_array().unwrap().len(),2);
+    let retry=json_request(&restarted,Method::POST,&path,None,Some(body("alice",&host,new_epoch.clone(),0,messages))).await?;assert_eq!(retry.json["nextCursor"],2);
+    let invalid=json_request(&restarted,Method::POST,&path,None,Some(body("bob",&guest,new_epoch,999,vec![]))).await?;assert_eq!(invalid.status,StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+async fn first_subscription_uploads_without_an_empty_epoch_round_trip() -> Result<(),Box<dyn std::error::Error>> {
+    let tmp=TemporaryDatabase::create()?;
+    let app=open_test_relay(&tmp.path)?.router();
+    let path=format!("/api/v1/games/{}/exchange","a1".repeat(32));
+    let body=|sender:&str,token:&str,messages:Vec<Value>|json!({"sender":sender,"playerToken":token,"inviteSecret":"a4".repeat(32),"epoch":null,"after":0,"messages":messages});
+    let host="a2".repeat(32);let guest="a3".repeat(32);let id="a5".repeat(32);
+    let response=json_request(&app,Method::POST,&path,None,Some(body("alice",&host,vec![]))).await?;
+    assert_eq!(response.status,StatusCode::OK);
+    let response=json_request(&app,Method::POST,&path,None,Some(body("bob",&guest,vec![json!({"messageId":id,"kind":"table.keys","payload":"AQID"})]))).await?;
+    assert_eq!(response.status,StatusCode::OK);
+    assert_eq!(response.json["accepted"],json!([id]));
+    assert_eq!(response.json["messages"],json!([]));
+    let received=json_request(&app,Method::POST,&path,None,Some(body("alice",&host,vec![]))).await?;
+    assert_eq!(received.json["messages"].as_array().unwrap().len(),1);
     Ok(())
 }

@@ -6,18 +6,19 @@ use bitcoin::secp256k1::{Keypair, Secp256k1, SecretKey};
 use bitcoin::{Amount, Network, TxOut};
 use common::TestResult;
 use dealer_openings::{ShareOpening, derive_card_signing_key, verify_share_opening};
-use poker_bitcoin::showdown_witness::ShowdownWitness;
+use poker_bitcoin::showdown_witness::{ObservedAliceScoreCertificate, ShowdownWitness};
 use poker_bitcoin::{
     AliceShowdownProgram, BobPayoutProgram, CompiledTaprootState, LeafProgram, TransactionTemplate,
     sign_sighash_default, taproot_script_sighash_default,
 };
 use poker_core_test_support::{CoreCli, PathExecutor};
 use poker_score_ots::{
-    KeyContext, LamportPurpose, Score24, generate_key, issue_alice_score_certificate,
-    issue_bob_score_certificate,
+    KeyContext, LamportMessage, LamportPublicKey, LamportPurpose, Score24, generate_key,
+    issue_alice_score_certificate, issue_bob_score_certificate,
 };
 use poker_settlement_types::{Role, ShowdownOutcome, root_node_id};
 use rand_core::OsRng;
+use sha2::{Digest, Sha256};
 
 #[test]
 #[ignore = "requires managed Bitcoin Core; run scripts/bitcoin-core-regtest.sh --suite dlog --require"]
@@ -112,7 +113,7 @@ fn run() -> TestResult {
             })
             .ok_or("fixture lacks outcome")?;
         let game = [91 + case as u8; 32];
-        let (mut secret_a, public_a) = generate_key(
+        let (mut secret_a, mut public_a) = generate_key(
             &mut OsRng,
             KeyContext::new(game, root_node_id(&game), LamportPurpose::AliceScore24Bit),
         )?;
@@ -124,6 +125,15 @@ fn run() -> TestResult {
             issue_alice_score_certificate(&mut secret_a, Score24::new(scores[0][subset_a])?)?;
         let cert_b =
             issue_bob_score_certificate(&mut secret_b, Score24::new(scores[1][subset_b])?)?;
+        // Alice may commit to a nonstandard preimage length. Bob must carry
+        // the confirmed certificate through payout without a fixed32 codec.
+        let nonstandard_preimage = (outcome == ShowdownOutcome::Split).then(|| vec![42; 33]);
+        if let Some(preimage) = &nonstandard_preimage {
+            let mut pairs = public_a.public_hash_pairs().to_vec();
+            let bit = usize::from(LamportMessage::AliceScore(cert_a.score_a()).bits_msb_first()[0]);
+            pairs[0][bit] = Sha256::digest(preimage).into();
+            public_a = LamportPublicKey::from_parts(public_a.context(), pairs)?;
+        }
         let alice = LeafProgram::AliceShowdown(AliceShowdownProgram::new(
             deal,
             game,
@@ -137,7 +147,7 @@ fn run() -> TestResult {
             [12; 32],
             [11; 32],
             outcome,
-            public_a,
+            public_a.clone(),
             public_b,
             authorizers,
         )?);
@@ -151,6 +161,7 @@ fn run() -> TestResult {
             &states[0].script_pubkey(),
             Amount::from_sat(200_000),
         )?;
+        let mut observed_alice = None;
         for role in 0..2 {
             let tip = path.tip().ok_or("missing settlement output")?;
             let output = if role == 0 {
@@ -193,9 +204,19 @@ fn run() -> TestResult {
             let authorizations =
                 signers.map(|key| sign_sighash_default(&secp, &key, digest).to_bytes());
             let elements = if role == 0 {
-                hand.alice_elements(authorizations, &cert_a)?
+                let mut elements = hand.alice_elements(authorizations, &cert_a)?;
+                if let Some(preimage) = &nonstandard_preimage {
+                    elements[1].clone_from(preimage);
+                }
+                elements
             } else {
-                hand.bob_elements(authorizations, &cert_a, &cert_b)?
+                hand.bob_elements_with_observed_alice(
+                    authorizations,
+                    observed_alice
+                        .as_ref()
+                        .ok_or("Alice certificate not confirmed")?,
+                    &cert_b,
+                )?
             };
             let mut valid = template.transaction().clone();
             valid.input[0].witness = leaf.assemble_witness(&elements)?;
@@ -212,6 +233,10 @@ fn run() -> TestResult {
             );
             if role == 0 {
                 path.advance(&valid, 0, "dlog Alice showdown")?;
+                observed_alice = Some(ObservedAliceScoreCertificate::from_witness_elements(
+                    &elements[..ObservedAliceScoreCertificate::WITNESS_ELEMENTS],
+                    &public_a,
+                )?);
             } else {
                 path.finish(&valid, "dlog Bob payout")?;
             }

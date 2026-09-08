@@ -1,0 +1,68 @@
+:root {
+  font: 16px system-ui;
+  color: #e6f1ed;
+  background: #10201b;
+}
+main {
+  max-width: 1040px;
+  margin: 32px auto;
+  padding: 20px;
+}
+h1 {
+  font-size: 32px;
+}
+label {
+  display: block;
+  margin: 16px 0;
+}
+input,
+select,
+button {
+  font: inherit;
+  border-radius: 6px;
+  padding: 10px;
+  border: 1px solid #64796f;
+  background: #1b342a;
+  color: inherit;
+}
+input {
+  width: min(90%, 550px);
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.45;
+}
+.buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.players {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+article {
+  padding: 16px;
+  background: #172e25;
+  border-radius: 12px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+a {
+  color: #82e6bc;
+}
+#status {
+  padding: 14px;
+  border-left: 3px solid #82e6bc;
+}
+@media (max-width: 600px) {
+  .players {
+    grid-template-columns: 1fr;
+  }
+}

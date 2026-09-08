@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>MutinyNet on-chain poker test</title
+  ><link rel="stylesheet" href="/src/onchain/style.css" />
+  <main>
+    <h1>On-chain poker · MutinyNet</h1>
+    <p>
+      Two independent player workers. Real testnet transactions, confirmed game
+      states and on-chain card reveals.
+    </p>
+    <label
+      >Disposable faucet private key
+      <input id="key" type="password" autocomplete="off" spellcheck="false"
+    /></label>
+    <label
+      >Graph
+      <select id="profile">
+        <option value="short">Short stack · 26 nodes</option>
+        <option value="full">Full tree · 56,132 nodes</option>
+      </select></label
+    >
+    <label
+      >Fee policy
+      <select id="fee-policy">
+        <option value="auto">Estimate-based</option>
+        <option value="1">1× test fee schedule</option>
+        <option value="2">2× test fee schedule</option>
+        <option value="3">3× test fee schedule</option>
+      </select></label
+    >
+    <label
+      >Scenario
+      <select id="scenario">
+        <option value="showdown">Complete hand and payout</option>
+        <option value="fold">Fold</option>
+        <option value="timeout">Opponent refusal timeout</option>
+        <option value="refund">Origin funding and return</option>
+        <option value="setup">Setup benchmark · no funding</option>
+      </select></label
+    >
+    <div class="buttons">
+      <button id="run">Run on MutinyNet</button
+      ><button id="resume">Resume saved test</button
+      ><button id="return-funds">Return unactivated escrow</button
+      ><button id="stop" disabled>Pause</button
+      ><button id="download">Download public report</button>
+    </div>
+    <div class="buttons">
+      <button id="list-saved">List saved tests</button
+      ><select id="saved-tests" aria-label="Saved tests">
+        <option value="">Choose a saved test</option>
+      </select>
+    </div>
+    <p id="status" role="status">
+      Ready. The funding key stays local and is never stored in the report.
+    </p>
+    <section class="players">
+      <article>
+        <h2>Alice</h2>
+        <pre id="alice">Not initialized</pre>
+      </article>
+      <article>
+        <h2>Bob</h2>
+        <pre id="bob">Not initialized</pre>
+      </article>
+    </section>
+    <h2>Confirmed transactions</h2>
+    <ol id="transactions"></ol>
+    <details>
+      <summary>Test report</summary>
+      <pre id="report">{}</pre>
+    </details>
+  </main>
+  <script type="module" src="/src/onchain/controller.js"></script>
+</html>

@@ -52,6 +52,15 @@ fn two_live_participants_persist_exchange_and_accept_same_certificate() {
                 }
             }
             assert!(a.snapshot().accepted && b.snapshot().accepted);
+            let original=a.accepted().expect("accepted");
+            let sealed=original.seal_local(&[11;32]);
+            let copy=VerifiedAcceptedDeal::open_local(&[11;32],&sealed).expect("local copy");
+            assert_eq!(copy.as_deal(),original.as_deal());
+            assert_eq!(copy.catalogue().keys,original.catalogue().keys);
+            assert!(VerifiedAcceptedDeal::open_local(&[12;32],&sealed).is_err());
+            let mut changed=sealed.clone();changed[500]^=1;
+            assert!(VerifiedAcceptedDeal::open_local(&[11;32],&changed).is_err());
+            assert!(VerifiedAcceptedDeal::open_local(&[11;32],&sealed[..sealed.len()-1]).is_err());
             assert_eq!(
                 a.certificate().expect("cert A"),
                 b.certificate().expect("cert B")

@@ -20,16 +20,23 @@
     {
       "name": "dealer",
       "url": "/wasm/dealer.wasm",
-      "sha256": "9c57e4c144c512a62381c4db8483414a449805779224666dbeea5f0623e56305",
-      "sizeBytes": 2060238,
+      "sha256": "9a7e1f1a1dd71d38e7dd82148a10d2cf91149e60fe883bcf083a5ccfa8b3fd29",
+      "sizeBytes": 1994080,
       "securityBoundary": "dealer-secret-worker"
     },
     {
       "name": "transaction",
       "url": "/wasm/transaction.wasm",
-      "sha256": "06a322787e8ca10890b566f9cc589b12acb0128a9db339286469766001067e25",
+      "sha256": "1159b82f52599ecbf603eb0c912a5192aaa4bbf98aa12dfd47f7d441c35ced93",
       "sizeBytes": 115436,
       "securityBoundary": "transaction-inspector"
+    },
+    {
+      "name": "session",
+      "url": "/wasm/session.wasm",
+      "sha256": "eb81cd01cd0bdcb0aafde8a1a47d43f314608758358e969491092ab609bf644b",
+      "sizeBytes": 4381308,
+      "securityBoundary": "local-onchain-player"
     }
   ]
 }

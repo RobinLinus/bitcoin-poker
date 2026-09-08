@@ -1,7 +1,11 @@
 # Dlog on-chain implementation status
 
-Milestone 1 is **not yet complete or deployed**. The native on-chain backbone is
-implemented and tested. The browser runs dlog practice play; it does not yet call the new dlog graph.
+The on-chain backbone, playable browser table and dedicated integration runner
+are implemented. With the schema-4 MutinyNet configuration, `/` is the playable
+table: invite another seat, fund the full graph, choose betting actions and follow
+confirmed reveals through payout. Each browser owns one independently keyed player.
+`/tools/onchain-e2e` remains the scripted diagnostic runner. Schema-3 deployments
+retain practice play; public deployment remains separate work.
 The legacy funded application and hash-based proof stack have been removed.
 
 ## Implemented
@@ -61,7 +65,16 @@ for later card signatures.
 
 - Native reference topology: 56,132 nodes and maximum 33 gameplay transitions;
   exact fee bound; representative states compiled; wrong parameter bindings
-  rejected. This does not benchmark preparation of every reference transaction.
+  rejected. The [browser benchmark](benchmarks/browser-settlement.md) now covers
+  every reference transaction authorization: construction fell from 614.7 seconds
+  to roughly 9–10 seconds, with the exact original authorization fingerprint.
+  Four crypto workers now parallelize signing and receiver verification. The
+  diagnostic harness measures complete setup including IndexedDB persistence,
+  authenticated local preparation reload, and fully verified untrusted import
+  separately. See the [implementation status](plans/setup-and-recovery-performance.md);
+  the dedicated funded integration now adds private game-state recovery and
+  independently observed confirmations. See the live
+  [campaign report](benchmarks/mutinynet-browser.md).
 - Real Core confirms all nine candidate card gates and rejects wrong candidates.
 - Real Core confirms both three-slot reusable reveals and a later card spend;
   duplicate slot signatures fail; both reveal-refusal timeout scenarios settle.
@@ -91,21 +104,27 @@ Measured showdown transactions are approximately 9,176 vbytes for Alice and
 40,100-sat maximum reference gameplay reserve, excluding activation. These are
 regtest qualification values, not a current MutinyNet fee recommendation.
 
-## Remaining work before the milestone can be called complete
+## Browser integration and remaining product work
 
-1. Expose the native graph and preparation in the browser worker/WASM API; sign
-   actual graph sighashes using random, durable keys instead of practice inputs.
-2. Wire the funding, relay, confirmation monitor, and table controls to that
-   API. Every button must select an actual graph edge and every displayed state
-   must follow a confirmed transaction. Add visible timeout claims and payout.
-3. Persist and recover local secrets, setup replay state, preparation artifacts,
-   score-key usage, observed openings, pending broadcasts, and the active chain
-   cursor. Public preparation snapshots alone do not solve game recovery.
-4. Complete preactivation abort/refund handling and qualify refresh, disconnect,
-   and opponent-refusal behavior from real browser sessions.
-5. Benchmark full-profile graph preparation and verify browser memory limits;
-   52 adaptors per reveal can be expensive across the full tree. Measure the
-   deployed fee/reserve and run complete MutinyNet hands before publishing.
+`poker-session` and `poker-session-wasm` own each player's real identities, dealer,
+preparation, observed openings, one-time score certificates and exact pending
+transactions. The browser persists encrypted recovery state, pins each game's
+Wasm engine and checks saved confirmations on restore. The schema-4 MutinyNet
+configuration permits the dedicated runner to fund the Taproot origin only after
+a signed return is durable. Mainnet stays rejected.
+
+Full-tree browser hands have confirmed through payout. The live report separates
+setup from confirmation waits and identifies each script build. The session Core
+suite covers full hand, fold, refund and unilateral CSV timeout, including exact
+pending-transaction restoration. Preparing the full graph does not broadcast its
+mutually exclusive branches.
+
+The playable table uses host-sponsored test funding for both 20,000-sat stacks.
+It supports invitations, full preparation, manual betting, automatic required
+reveals/showdown, confirmed balances, timeout claims and reload recovery.
+Remaining product work: general wallet/cash-out UX, trustless multi-depositor
+funding, automatic reorg reconciliation and public deployment. Its pre-signed
+origin return is not a unilateral two-depositor refund protocol.
 
 No independent cryptographic audit is claimed for the adaptor extension. Uncommitted legacy application changes were backed up outside the repository
 before removal.
@@ -114,5 +133,11 @@ before removal.
 
 The root workspace, dealer/poker package names, unified browser tree, explicit
 worker entries, schema-3 practice deployment, and parameterized native funding
-utilities are implemented. The funding Wasm bridge still exposes its diagnostic
-profile; connecting it to the on-chain graph remains MVP integration work.
+utilities are implemented. The older funding Wasm bridge retains its diagnostic
+profile. The on-chain session uses its own Taproot origin funding adapter.
+
+The playable table supports consecutive hands with carried poker balances, an
+alternating dealer, fresh keys and payout rollover plus a host fee top-up. Both
+players confirm Next hand, and saved URLs follow the successor hand. See
+[consecutive-hand qualification](benchmarks/consecutive-hands.md) for completed
+Core tests and the live MutinyNet funding checkpoint.

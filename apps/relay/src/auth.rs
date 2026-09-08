@@ -19,7 +19,7 @@ pub(super) fn authorize(
             params![game_id.as_slice()],
             |row| {
                 Ok((
-                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(0)?,
                     row.get::<_, Option<Vec<u8>>>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, i64>(3)?,
@@ -35,7 +35,7 @@ pub(super) fn authorize(
     if checked_u64(expires_at)? <= now_ms()? {
         return Err(ApiError::unauthorized());
     }
-    let first = constant_time_eq(&player_one, &token_hash);
+    let first = player_one.as_deref().is_some_and(|stored| constant_time_eq(stored, &token_hash));
     let second = player_two
         .as_deref()
         .is_some_and(|stored| constant_time_eq(stored, &token_hash));
@@ -46,7 +46,7 @@ pub(super) fn authorize(
     };
     Ok(Authorization {
         sender,
-        joined: player_two.is_some(),
+        joined: player_one.is_some() && player_two.is_some(),
         last_cursor: checked_u64(last_cursor)?,
         message_count: checked_u64(message_count)?,
         message_bytes: checked_u64(message_bytes)?,

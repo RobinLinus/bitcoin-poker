@@ -3,6 +3,9 @@
 
 mod error;
 
+/// Fixed-tree channel contest and retirement primitives.
+pub mod channel;
+
 /// Exact witness-assisted Tapscript implementation of five-card evaluation.
 pub mod eval5_script;
 /// Deterministic fee policies.
@@ -28,13 +31,14 @@ pub use poker_score_ots::AliceScoreCertificate;
 pub use predicates::{ALICE_SEVEN_SLOTS, BOB_SEVEN_SLOTS, RevealPattern};
 pub use signing::{
     DEFAULT_SIGHASH_SIGNATURE_BYTES, DefaultSighashSignature, sign_sighash_default,
-    taproot_key_sighash_default, taproot_script_sighash_default, verify_sighash_default,
+    taproot_key_sighash_default, taproot_leaf_sighash_default, taproot_script_sighash_default,
+    verify_sighash_default,
 };
 pub use taproot::{
     ActionProgram, AliceShowdownProgram, BobPayoutProgram, CompiledTapLeaf, CompiledTaprootState,
     LeafProgram, MAX_GENERATED_SCRIPT_BYTES, MAX_TAPROOT_LEAVES, MAX_WITNESS_ELEMENT_BYTES,
-    RevealProgram, SHOWDOWN_CATEGORIES, TimeoutProgram, assemble_timeout_witness_elements,
-    tapleaf_hash,
+    PreparedShowdownCards, RevealProgram, SHOWDOWN_CATEGORIES, TimeoutProgram,
+    assemble_timeout_witness_elements, tapleaf_hash,
 };
 pub use transactions::{
     TransactionTemplate, custom_signet_network_id, ensure_non_mainnet, network_from_genesis_id,

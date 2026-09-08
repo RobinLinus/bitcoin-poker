@@ -407,6 +407,8 @@ class EsploraAdapter {
   #profileState = "unknown";
   #profileFailure;
   #verificationPromise;
+  #retryAt=0;
+  #rateLimits=0;
 
   constructor(config, fetchImplementation, timeoutMs, transactionInspector) {
     this.#config = config;
@@ -430,6 +432,7 @@ class EsploraAdapter {
   }
 
   async #request(path, { method = "GET", body, maximum = MAX_METADATA_RESPONSE_BYTES } = {}) {
+    if(Date.now()<this.#retryAt) throw fail("TRANSPORT", "Esplora returned HTTP 429; waiting before retry");
     const controller = new AbortController();
     let timeoutHandle;
     let timedOut = false;
@@ -464,6 +467,12 @@ class EsploraAdapter {
       if (response.redirected) {
         throw fail("TRANSPORT", "Esplora redirected a configured endpoint request");
       }
+      if(response.status===429) {
+        this.#rateLimits++;
+        const header=response.headers?.get?.('retry-after');
+        const requested=header==null?0:/^\d+$/.test(header)?Number(header)*1000:Math.max(0,Date.parse(header)-Date.now());
+        this.#retryAt=Date.now()+Math.max(Number.isFinite(requested)?requested:0,Math.min(30000,2000*2**Math.min(this.#rateLimits,4)));
+      } else if(response.status===200) {this.#rateLimits=0;this.#retryAt=0;}
       if (response.status === 404) {
         throw fail("NOT_FOUND", "Esplora object was not found");
       }

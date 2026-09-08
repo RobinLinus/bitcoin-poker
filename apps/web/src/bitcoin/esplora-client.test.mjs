@@ -261,3 +261,18 @@ assert.throws(
 );
 
 console.log("generic injected Esplora adapter tests ok");
+
+// A provider cooldown applies to every operation on the adapter, including
+// recovery calls and other poll loops that bypass the table controller.
+{
+ let requests=0,now=Date.now();const clock=Date.now;
+ Date.now=()=>now;
+ try {
+  const limited=createEsploraChainAdapter(deployment,{fetch:async()=>{requests++;return new Response('',{status:429,headers:{'retry-after':'10'}})}});
+  await assert.rejects(limited.tip(),/429/);
+  const initialRequests=requests;
+  for(let i=0;i<20;i++)await assert.rejects(limited.tip(),/429/);
+  assert.equal(requests,initialRequests);
+  now+=10001;await assert.rejects(limited.tip(),/429/);assert.ok(requests>initialRequests);
+ }finally{Date.now=clock}
+}

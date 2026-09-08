@@ -12,6 +12,8 @@ use thiserror::Error;
 /// Compile one reveal step. Witness order is actor signature, then one completed
 /// adaptor signature for each slot in the supplied order. The graph must bind
 /// these distinct keys to the opponent and retain the corresponding packages.
+/// Deal, node, and slot metadata are validated here and bound by the caller's
+/// graph and signing context; they are not repeated in the executable script.
 ///
 /// # Errors
 ///
@@ -22,7 +24,7 @@ pub fn reveal_tapscript(
     actor: [u8; 32],
     slots: &[(u8, [u8; 32])],
 ) -> Result<bitcoin::ScriptBuf, RevealError> {
-    use bitcoin::opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_DROP};
+    use bitcoin::opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY};
     if deal_id == [0; 32] || node_id == [0; 32] || slots.is_empty() || slots.len() > 3 {
         return Err(RevealError::Context);
     }
@@ -33,17 +35,9 @@ pub fn reveal_tapscript(
             return Err(RevealError::Context);
         }
     }
-    let mut builder = bitcoin::script::Builder::new()
-        .push_slice(deal_id)
-        .push_opcode(OP_DROP)
-        .push_slice(node_id)
-        .push_opcode(OP_DROP);
-    for (slot, key) in slots.iter().rev() {
-        builder = builder
-            .push_int(i64::from(*slot))
-            .push_opcode(OP_DROP)
-            .push_slice(key)
-            .push_opcode(OP_CHECKSIGVERIFY);
+    let mut builder = bitcoin::script::Builder::new();
+    for (_, key) in slots.iter().rev() {
+        builder = builder.push_slice(key).push_opcode(OP_CHECKSIGVERIFY);
     }
     Ok(builder
         .push_slice(actor)
@@ -55,6 +49,13 @@ pub fn reveal_tapscript(
 pub const SHARE_CANDIDATES: usize = 52;
 /// Canonical package size: context hash and 52 compressed adaptor signatures.
 pub const REVEAL_PACKAGE_BYTES: usize = 32 + SHARE_CANDIDATES * 65;
+
+thread_local! {
+    // A deal has eighteen public contribution commitments. Every tree branch
+    // reuses their 52 encryption points; only its signature context changes.
+    static ENCRYPTION_POINTS: std::cell::RefCell<Vec<(ProjectivePoint, Vec<MaybePoint>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
 
 /// Public context independently supplied by the verified graph, never the peer package.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -118,13 +119,27 @@ impl RevealContext {
     }
 
     fn encryption_point(&self, value: u8) -> Result<MaybePoint, RevealError> {
-        let mut bytes = Vec::with_capacity(33);
-        encode_point(
-            &(self.commitment - protocol_parameters().m * Scalar::from(u64::from(value))),
-            &mut bytes,
-        );
-        // Avoid secp 0.6.0's recursive AffinePoint conversion on the pure-k256 backend.
-        MaybePoint::from_slice(&bytes).map_err(|_| RevealError::Context)
+        if usize::from(value) >= SHARE_CANDIDATES { return Err(RevealError::Context); }
+        ENCRYPTION_POINTS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if let Some((_, points)) = cache.iter().find(|(commitment, _)| *commitment == self.commitment) {
+                return Ok(points[usize::from(value)]);
+            }
+            let mut point = self.commitment;
+            let mut points = Vec::with_capacity(SHARE_CANDIDATES);
+            let mut bytes = Vec::with_capacity(33);
+            for _ in 0..SHARE_CANDIDATES {
+                bytes.clear();
+                encode_point(&point, &mut bytes);
+                // Use the canonical encoding across the k256/secp backends.
+                points.push(MaybePoint::from_slice(&bytes).map_err(|_| RevealError::Context)?);
+                point -= protocol_parameters().m;
+            }
+            let result = points[usize::from(value)];
+            if cache.len() == 18 { cache.remove(0); }
+            cache.push((self.commitment, points));
+            Ok(result)
+        })
     }
 
     fn digest(&self) -> [u8; 32] {
@@ -161,7 +176,13 @@ impl RevealContext {
     }
 }
 
-impl VerifiedRevealPackage {
+/// Locally generated outgoing authorizations. This type has no decoder and
+/// cannot be used as a verified peer package; receivers must call `verify`.
+pub struct GeneratedRevealPackage {
+    bytes: Vec<u8>,
+}
+
+impl GeneratedRevealPackage {
     /// Preauthorize every possible opening without knowing the releaser's secret.
     /// The caller must persist the returned bytes before sending them.
     ///
@@ -169,7 +190,7 @@ impl VerifiedRevealPackage {
     ///
     /// Rejects invalid inputs or a mismatch with the verified protocol/transaction context.
     pub fn create(
-        context: RevealContext,
+        context: &RevealContext,
         signing_key: &[u8; 32],
         auxiliary: &[u8; 32],
     ) -> Result<Self, RevealError> {
@@ -187,16 +208,29 @@ impl VerifiedRevealPackage {
                 context.nonce_seed(value, auxiliary)?,
                 point,
             );
-            adaptor::verify_single(public, &signature, context.sighash, point)
-                .map_err(|_| RevealError::Signature)?;
             candidates.push(signature);
         }
         let context_digest = context.digest();
-        Ok(Self {
-            context,
-            context_digest,
-            candidates,
-        })
+        let mut bytes = Vec::with_capacity(REVEAL_PACKAGE_BYTES);
+        bytes.extend_from_slice(&context_digest);
+        bytes.extend(candidates.iter().flat_map(BinaryEncoding::to_bytes));
+        Ok(Self { bytes })
+    }
+
+    /// Canonical wire bytes; local provenance does not verify peer input.
+    #[must_use]
+    pub fn to_bytes(self) -> Vec<u8> { self.bytes }
+}
+
+impl VerifiedRevealPackage {
+    /// Generate and independently verify a package for callers requiring the
+    /// verified type. The outgoing worker uses `GeneratedRevealPackage` instead.
+    ///
+    /// # Errors
+    /// Rejects invalid contexts, keys or authorizations.
+    pub fn create(context: RevealContext, signing_key: &[u8; 32], auxiliary: &[u8; 32]) -> Result<Self, RevealError> {
+        let outgoing = GeneratedRevealPackage::create(&context, signing_key, auxiliary)?;
+        Self::verify(context, &outgoing.to_bytes())
     }
 
     /// Verify exactly 52 canonical adaptors against the graph's expected context.
@@ -287,13 +321,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cached_encryption_points_match_scalar_formula_and_stay_bounded() -> Result<(), RevealError> {
+        for n in 0..20_u64 {
+            let context = RevealContext { deal_id: [1; 32], graph_id: [2; 32], node_id: [3; 32],
+                revealer: 0, slot: 0, authorizer: [4; 32], sighash: [5; 32],
+                commitment: protocol_parameters().m * Scalar::from(n) };
+            for value in 0..52_u8 {
+                let mut bytes = Vec::new();
+                encode_point(&(context.commitment - protocol_parameters().m * Scalar::from(u64::from(value))), &mut bytes);
+                let expected = MaybePoint::from_slice(&bytes).map_err(|_| RevealError::Context)?;
+                assert_eq!(context.encryption_point(value)?, expected);
+                assert_eq!(context.encryption_point(value)?, expected);
+            }
+            assert!(context.encryption_point(52).is_err());
+        }
+        ENCRYPTION_POINTS.with(|cache| assert_eq!(cache.borrow().len(), 18));
+        Ok(())
+    }
+
+    #[test]
     fn reveal_packages_bind_all_candidates_and_recover_the_opening() -> Result<(), RevealError> {
         let key = [19; 32];
         let authorizer = SigningScalar::from_slice(&key)
             .map_err(|_| RevealError::Context)?
             .base_point_mul()
             .serialize_xonly();
-        for value in [0_u8, 1, 25, 51] {
+        for value in 0..52_u8 {
             for blinding in [Scalar::ZERO, Scalar::from(71_u64), -Scalar::from(83_u64)] {
                 let context = RevealContext {
                     deal_id: [1; 32],

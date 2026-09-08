@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Channel table E2E</title>
+<link rel="stylesheet" href="/src/ui/styles.css"><main>
+<h1>Channel table E2E</h1><p>Disposable MutinyNet funds. Runs the actual table session with two independent player workers.</p>
+<label>Resume game ID (optional) <input id="resume-game" autocomplete="off"></label>
+<label>Test funding key <input id="key" type="password" autocomplete="off"></label>
+<label><input id="warm-buffer" type="checkbox" checked> Fill the future-hand buffer before playing</label>
+<button id="run">Run three hands and cash out</button><pre id="result">Ready</pre>
+<script type="module" src="/src/onchain/channel-e2e.js"></script></main></html>

@@ -1,13 +1,14 @@
-import { setStatus, renderCard, renderBalances } from "./render-table.js";
+import { formatBitcoinAmount as money } from "../ui/bitcoin-amount.js";
+import { setStatus, renderCard, renderBalances, highlightTurn, animateChips, playerName, savedPlayerName, renderPlayerNames } from "./render-table.js";
 import { loadWasmBytes } from "../wasm/loader.js";
 import { demoIdentities as identities } from "./demo-identities.js";
 import { bytesToHex, hexToBytes, randomHex, toBase64, fromBase64, encodeJson, decodeJson, api, inviteLink, parseInvite } from "./room-session.js";
-import { WorkerRpcClient } from "/src/workers/rpc-client.js";
-import { SignedMoveLog } from "/src/practice/signed-move-log.js";
+import { WorkerRpcClient } from "../workers/rpc-client.js";
+import { SignedMoveLog } from "./signed-move-log.js";
 
 const $ = (id) => document.getElementById(id);
+document.body.classList.add("practice-table");
 const fill = (value) => new Uint8Array(32).fill(value);
-const money = (value) => `₿${Number(value).toLocaleString("en-US")}`;
 
 
 let session = null;
@@ -42,20 +43,10 @@ function clearErrors() {
   }
 }
 
-function selectTab(name) {
-  const creating = name === "create";
-  $("create-tab").classList.toggle("active", creating);
-  $("join-tab").classList.toggle("active", !creating);
-  $("create-tab").setAttribute("aria-selected", String(creating));
-  $("join-tab").setAttribute("aria-selected", String(!creating));
-  $("create-panel").classList.toggle("hidden", !creating);
-  $("join-panel").classList.toggle("hidden", creating);
-  clearErrors();
-}
-
 async function createGame() {
   clearErrors();
   $("create-game").disabled = true;
+  $("create-game").textContent = "Creating…";
   try {
     const gameId = randomHex();
     const playerToken = randomHex();
@@ -69,14 +60,18 @@ async function createGame() {
   } catch (error) {
     showError(error);
     $("create-game").disabled = false;
+    $("create-game").textContent = "Create table";
   }
 }
 
 async function joinGame() {
+  if (document.body.classList.contains("nickname-onboarding")) return;
   clearErrors();
-  $("join-game").disabled = true;
+  $("join-retry").classList.remove("hidden");
+  $("join-retry").disabled = true;
+  $("join-retry").textContent = "Joining…";
   try {
-    const { gameId, inviteSecret } = parseInvite($("invite-value").value);
+    const { gameId, inviteSecret } = parseInvite(location.href);
     const playerToken = randomHex();
     await api(`/api/v1/games/${gameId}/join`, {
       method: "POST",
@@ -86,27 +81,31 @@ async function joinGame() {
     await enterGame({ gameId, playerToken, role: 1, cursor: 0, joined: true, hand: 1 });
   } catch (error) {
     showError(error);
-    $("join-game").disabled = false;
+    $("join-retry").disabled = false;
+    $("join-retry").textContent = "Join table";
   }
 }
 
 async function enterGame(nextSession) {
   session = nextSession;
+  session.playerName ??= savedPlayerName();
   $("lobby").classList.add("hidden");
   $("game").classList.remove("hidden");
-  $("funding-card").classList.add("hidden");
-  $("deployment-name").textContent = "Practice game";
+  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   $("table-small-blind").textContent = money(50);
   $("table-big-blind").textContent = money(100);
   const host = session.role === 0;
   $("local-avatar").textContent = host ? "H" : "G";
-  $("local-name").textContent = host ? "You · Host" : "You · Guest";
+  $("local-name").textContent = "You";
   $("opponent-avatar").textContent = host ? "G" : "H";
-  $("opponent-name").textContent = host ? "Guest" : "Host";
-  $("local-stack").textContent = `Stack · ${money(10_000)}`;
-  $("opponent-stack").textContent = `Stack · ${money(10_000)}`;
+  $("opponent-name").textContent = "Opponent";
+  renderPlayerNames(session.playerName, session.opponentName);
+  $("local-stack").textContent = money(10_000);
+  $("opponent-stack").textContent = money(10_000);
   $("game-pot").textContent = money(0);
-  $("next-hand").classList.add("hidden");
+  $("local-dealer").classList.add("hidden");
+  $("opponent-dealer").classList.add("hidden");
   $("invite-card").classList.toggle("hidden", !host);
   if (host) $("share-link").value = inviteLink(session.gameId, session.inviteSecret);
   setStatus(host ? "Waiting for opponent" : "Joining table…", host ? "Share the private link to fill the second seat." : "Connecting to the host.");
@@ -120,8 +119,8 @@ async function enterGame(nextSession) {
 
 async function initializeParticipant() {
   if (client) return;
-  setStatus("Creating a fair deck…", "Both players are shuffling together.");
-  $("opponent-state").textContent = "Connected";
+  setStatus("Shuffling the deck…", "");
+  $("opponent-state").textContent = "";
   const wasm = (await loadWasmBytes("dealer")).buffer;
   const room = hexToBytes(session.gameId);
   const anchor = Uint8Array.from(room);
@@ -137,7 +136,7 @@ async function initializeParticipant() {
     sessionNonce: nonce,
     rulesHash: fill(4),
   };
-  client = new WorkerRpcClient(new Worker("/src/dealing/worker.js", { type: "module" }));
+  client = new WorkerRpcClient(new Worker(new URL("../dealing/worker.js",import.meta.url), { type: "module" }));
   const identitySecret = Uint8Array.from(identities[session.role].secret);
   const entropy = crypto.getRandomValues(new Uint8Array(32));
   await client.request("init", {
@@ -223,7 +222,7 @@ async function advanceSetup() {
       setupAccepted = true;
       table ||= new PracticeTable(session.role, [10_000, 10_000], session.hand);
       await initializeRatchet();
-      setStatus("Dealing cards…", "Your cards stay private in this browser.");
+      setStatus("Dealing hole cards…", "Only you can see your hole cards.");
       await sendPrivateShares();
       return;
     }
@@ -246,7 +245,7 @@ async function maybeStartRetry() {
   await client.request("start-retry", { nextAttempt: localRetryAttempt });
   localRetryAttempt = 0;
   peerRetryAttempt = 0;
-  setStatus("Reshuffling…", "Both players are creating a fresh fair deck.");
+  setStatus("Reshuffling…", "");
 }
 
 function ownPrivateSlots() {
@@ -316,6 +315,7 @@ async function tick() {
       return;
     }
     $("invite-card").classList.add("hidden");
+    await sendJson("profile", "game.profile", {name:session.playerName});
     await initializeParticipant();
     const page = await api(`/api/v1/games/${session.gameId}/messages?after=${session.cursor}&limit=64`, {}, session.playerToken);
     for (const message of page.messages || []) {
@@ -324,6 +324,10 @@ async function tick() {
     }
     await advanceSetup();
     if (setupAccepted) await sendPrivateShares();
+    if (table?.complete && !session.sitOutNext && Date.now() >= table.autoNextAt) {
+      await table.requestNextHand();
+      if (table?.complete && table.nextReady.size === 2) await startNextHand(session.hand + 1);
+    }
     clearErrors();
   } catch (error) {
     showError(error);
@@ -334,6 +338,14 @@ async function tick() {
 
 async function applyMessage(message) {
   const localSender = message.sender === (session.role === 0 ? "alice" : "bob");
+  if (message.kind === "game.profile") {
+    const value = decodeJson(message.payload);
+    if (!localSender) {
+      session.opponentName = playerName(value.name);
+      renderPlayerNames(session.playerName, session.opponentName);
+    }
+    return;
+  }
   if (message.kind === "dlog52.setup") {
     const value = decodeJson(message.payload);
     if (value.hand !== session.hand) return;
@@ -406,7 +418,7 @@ async function applyMessage(message) {
   if (message.kind === "game.next") {
     const value = decodeJson(message.payload);
     if (value.hand === session.hand && value.nextHand === session.hand + 1) {
-      await startNextHand(value.nextHand);
+      table?.nextReady.add(localSender ? session.role : 1 - session.role);
     }
   }
 }
@@ -447,7 +459,8 @@ function resetCards() {
 }
 
 async function startNextHand(nextHand) {
-  if (nextHand !== session.hand + 1) return;
+  if (nextHand !== session.hand + 1 || !table?.complete || table.nextReady.size !== 2 || session.sitOutNext) return;
+  $("sit-out-next-hand").disabled = false;
   const stacks = table?.stacks.slice() || [10_000, 10_000];
   if (client) await client.close();
   client = null;
@@ -462,13 +475,13 @@ async function startNextHand(nextHand) {
   peerPublicOpenings.clear();
   table = new PracticeTable(session.role, stacks, session.hand);
   resetCards();
-  $("next-hand").classList.add("hidden");
-  $("next-hand").disabled = false;
+  $("local-dealer").classList.add("hidden");
+  $("opponent-dealer").classList.add("hidden");
   $("action-bar").classList.add("hidden");
   $("game-pot").textContent = money(0);
-  $("opponent-state").textContent = "Shuffling";
+  $("opponent-state").textContent = "";
   document.body.removeAttribute("data-game-complete");
-  setStatus(`Preparing hand ${session.hand}…`, "Both players are creating a fresh deck.");
+  setStatus(`Preparing hand ${session.hand}…`, "");
   await initializeParticipant();
   await advanceSetup();
 }
@@ -485,6 +498,8 @@ class PracticeTable {
     this.peerReady = false;
     this.started = false;
     this.complete = false;
+    this.nextRequested = false;
+    this.nextReady = new Set();
     this.pendingAction = false;
     this.actionSeq = 0;
     this.reveal = null;
@@ -516,11 +531,9 @@ class PracticeTable {
     this.raises = 0;
     this.pay(this.button, 50);
     this.pay(this.bigBlind, 100);
-    $("local-blind").textContent = this.localRole === this.button ? "SB" : "BB";
-    $("opponent-blind").textContent = this.localRole === this.button ? "BB" : "SB";
-    $("local-blind").classList.remove("hidden");
-    $("opponent-blind").classList.remove("hidden");
-    $("opponent-state").textContent = "Playing";
+    $("local-dealer").classList.toggle("hidden", this.localRole !== this.button);
+    $("opponent-dealer").classList.toggle("hidden", this.localRole === this.button);
+    $("opponent-state").textContent = "";
     this.renderTurn();
   }
 
@@ -532,7 +545,11 @@ class PracticeTable {
     this.renderMoney();
   }
 
-  renderMoney() { renderBalances(this.stacks, this.localRole, this.pot); }
+  renderMoney() {
+    const bets = this.complete ? [0, 0] : this.streetCommitted;
+    animateChips({hand:`${session.gameId}:${session.hand}`,bets:[bets[this.localRole],bets[1-this.localRole]],pot:this.complete?0:this.pot,terminal:this.complete,winner:this.winner == null ? null : this.winner===this.localRole?'local':'opponent'});
+    renderBalances(this.stacks, this.localRole, this.complete?0:this.pot, bets);
+  }
 
   legalActions() {
     const toCall = Math.max(0, this.currentBet - this.streetCommitted[this.actor]);
@@ -550,7 +567,8 @@ class PracticeTable {
     if (this.complete || this.actor === null) return;
     const legal = this.legalActions();
     const localTurn = this.actor === this.localRole;
-    $("opponent-state").textContent = localTurn ? "Waiting" : "Their turn";
+    highlightTurn(this.pendingAction ? null : localTurn ? "local" : "opponent");
+    $("opponent-state").textContent = "";
     const street = this.street[0].toUpperCase() + this.street.slice(1);
     setStatus(
       `${street} · ${localTurn ? "your action" : "opponent’s action"}`,
@@ -559,21 +577,29 @@ class PracticeTable {
         : `${localTurn ? "Check or bet" : "Waiting for the other player"}.`,
       false,
     );
-    $("action-bar").classList.remove("hidden");
+    $("action-bar").classList.toggle("hidden", !localTurn || this.pendingAction);
     $("action-fold").textContent = "Fold";
     $("action-check").textContent = "Check";
-    $("action-call").textContent = legal.toCall ? `Call ${money(legal.toCall)}` : "Call";
-    $("action-aggressive").textContent = `${this.currentBet === 0 ? "Bet" : "Raise to"} ${money(legal.aggressiveTarget)}`;
+    $("action-call").textContent = legal.toCall ? `Call ${money(Math.min(legal.toCall, this.stacks[this.actor]))}` : "Call";
+    $("action-aggressive").textContent = `${this.currentBet === 0 ? "Bet" : "Raise to"} ${money(Math.min(legal.aggressiveTarget, this.streetCommitted[this.actor] + this.stacks[this.actor]))}`;
     $("action-fold").disabled = !localTurn || this.pendingAction;
     $("action-check").disabled = !localTurn || !legal.canCheck || this.pendingAction;
     $("action-call").disabled = !localTurn || !legal.canCall || this.pendingAction;
     $("action-aggressive").disabled = !localTurn || !legal.canAggressive || this.pendingAction;
+    for (const id of ["action-fold", "action-check", "action-call", "action-aggressive"])
+      $(id).classList.toggle("hidden", $(id).disabled);
+    if (this.pendingAction) setStatus("Sending your move…", "");
   }
 
   async sendAction(kind) {
     if (this.complete || this.actor !== this.localRole || this.pendingAction) return;
     this.pendingAction = true;
     this.renderTurn();
+    const bets = [...this.streetCommitted];
+    const legal = this.legalActions();
+    if (kind === "call") bets[this.localRole] += legal.toCall;
+    if (kind === "aggressive") bets[this.localRole] = legal.aggressiveTarget;
+    renderBalances(this.stacks, this.localRole, this.pot, bets, this.streetCommitted);
     try {
       await initializeRatchet();
       const proposal = await ratchet.propose({
@@ -585,6 +611,7 @@ class PracticeTable {
       await tick();
     } catch (error) {
       this.pendingAction = false;
+      this.renderMoney();
       this.renderTurn();
       throw error;
     }
@@ -657,6 +684,8 @@ class PracticeTable {
 
   async closeStreet() {
     this.actor = null;
+    this.streetCommitted = [0, 0];
+    this.renderMoney();
     $("action-bar").classList.add("hidden");
     const next = this.street === "preflop" ? "flop" : this.street === "flop" ? "turn" : this.street === "turn" ? "river" : "showdown";
     await this.beginReveal(next);
@@ -666,7 +695,7 @@ class PracticeTable {
     const slots = next === "flop" ? [4, 5, 6] : next === "turn" ? [7] : next === "river" ? [8] : [0, 1, 2, 3];
     const stage = next === "flop" ? 1 : next === "turn" ? 2 : next === "river" ? 3 : 4;
     this.reveal = { next, slots, stage };
-    setStatus(next === "showdown" ? "Showdown" : `Dealing the ${next}…`, "Both players are revealing the next cards.", false);
+    setStatus(next === "showdown" ? "Showdown" : next === "flop" ? "Dealing flop…" : `Dealing ${next} card…`, "");
     for (const slot of slots) {
       const key = `${next}-share-${slot}`;
       if (sentFrames.has(`hand-${session.hand}-${key}`)) continue;
@@ -729,20 +758,25 @@ class PracticeTable {
   }
 
   async requestNextHand() {
-    if (!this.complete || $("next-hand").disabled) return;
-    $("next-hand").disabled = true;
-    setStatus("Starting next hand…", "Preparing a fresh shuffle with the other player.");
+    if (!this.complete || this.nextRequested || session.sitOutNext || this.stacks.some(amount => amount < 100)) return;
+    this.nextRequested = true;
+    $("sit-out-next-hand").disabled = true;
+    setStatus("Starting next hand…", "");
     try {
       await sendJson(`next-${this.handNumber + 1}`, "game.next", { nextHand: this.handNumber + 1 });
-      await tick();
+      this.nextReady.add(session.role);
     } catch (error) {
-      $("next-hand").disabled = false;
+      this.nextRequested = false;
+      $("sit-out-next-hand").disabled = false;
       throw error;
     }
   }
 
   finish(winner) {
+    this.winner = winner;
+    highlightTurn(null);
     this.complete = true;
+    this.autoNextAt = Date.now() + 3000;
     this.actor = null;
     $("action-bar").classList.add("hidden");
     if (winner === null) {
@@ -751,42 +785,48 @@ class PracticeTable {
     } else this.stacks[winner] += this.pot;
     this.renderMoney();
     const label = winner === null ? "Split pot" : winner === this.localRole ? "You win" : "Opponent wins";
-    setStatus(label, `${money(this.pot)} hand complete.`);
-    $("opponent-state").textContent = "Hand complete";
-    $("next-hand").disabled = false;
-    $("next-hand").classList.remove("hidden");
-    document.body.dataset.gameComplete = "true";
+    setStatus(label, session.sitOutNext ? "Sitting out" : "");
+    $("opponent-state").textContent = "";
+      document.body.dataset.gameComplete = "true";
   }
 }
 
-function copyInvite() {
+async function copyInvite() {
   const input = $("share-link");
-  navigator.clipboard?.writeText(input.value).then(() => {
+  $("copy-link").disabled = true;
+  $("copy-link").textContent = "Copying…";
+  try {
+    await navigator.clipboard.writeText(input.value);
     $("copy-state").textContent = "Invite copied. Send it to the other player.";
-    $("copy-link").textContent = "Copied";
-  }).catch(() => {
+  } catch {
     input.select();
     $("copy-state").textContent = "Copy the selected link and send it privately.";
-  });
+  } finally {
+    $("copy-link").disabled = false;
+    $("copy-link").textContent = "Copy";
+  }
 }
 
 function loadInviteRoute() {
   const match = location.hash.match(/^#\/join\/([0-9a-f]{64})\/([0-9a-f]{64})$/i);
   if (!match) return;
-  selectTab("join");
-  $("invite-value").value = location.href;
-  $("join-hint").textContent = "Invite recognized. Join when you’re ready.";
+  void joinGame();
 }
-
-$("deployment-name").textContent = "Practice game";
-$("create-tab").addEventListener("click", () => selectTab("create"));
-$("join-tab").addEventListener("click", () => selectTab("join"));
+window.addEventListener("nickname-ready", loadInviteRoute);
+window.addEventListener("hashchange", loadInviteRoute);
 $("create-game").addEventListener("click", () => void createGame());
-$("join-game").addEventListener("click", () => void joinGame());
+$("join-retry").addEventListener("click", () => void joinGame());
 $("copy-link").addEventListener("click", copyInvite);
 $("action-fold").addEventListener("click", () => void table?.sendAction("fold").catch(showError));
 $("action-check").addEventListener("click", () => void table?.sendAction("check").catch(showError));
 $("action-call").addEventListener("click", () => void table?.sendAction("call").catch(showError));
 $("action-aggressive").addEventListener("click", () => void table?.sendAction("aggressive").catch(showError));
-$("next-hand").addEventListener("click", () => void table?.requestNextHand().catch(showError));
+$("sit-out-next-hand").addEventListener("change", (event) => {
+  if (!session) return;
+  session.sitOutNext = event.target.checked;
+  if (table?.complete) {
+    $("table-detail").textContent = session.sitOutNext ? "Sitting out" : "";
+    void tick();
+  }
+});
 loadInviteRoute();

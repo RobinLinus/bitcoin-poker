@@ -7,7 +7,7 @@ use super::{
     PokerRules, REFERENCE_ALICE_LAMPORT_ENTRIES, REFERENCE_BOB_LAMPORT_ENTRIES,
     REFERENCE_MAX_PATH_LENGTH, REFERENCE_TOTAL_NODE_COUNT, REFERENCE_TRANSACTION_COUNT,
     RevealPattern, Role, ShowdownOutcome, Street, TerminalOutcome, TimeoutKind, TimeoutSpec,
-    alice_showdown_timeout, betting_phase, bob_showdown_timeout, child_node_id,
+    alice_showdown_timeout, betting_phase, bob_showdown_timeout, path_node_id,
     community_reveal_steps, hole_reveal_steps, is_all_in, next_depth, planned_state_digest,
     profile, record_expected, reveal_edge_kind, reveal_phase_street, reveal_step_for_phase,
     root_node_id, sort_lamport_entries, state_after_completed_street, terminal_accounting,
@@ -426,7 +426,7 @@ pub(super) fn verify_plan(plan: &LogicalGraphPlan) -> Result<(), CompilerError> 
             if child.parent_node_id != Some(node.node_id)
                 || child.depth != next_depth(node.depth)?
                 || child.node_id
-                    != child_node_id(&node.node_id, edge.kind, &child.logical_state_digest)
+                    != path_node_id(&node.node_id, edge.kind)
             {
                 return Err(profile("planned parent/child linkage is inconsistent"));
             }

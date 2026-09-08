@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "network": "MutinyNet",
+  "sessionWasmSha256": "987c2b5033d4b5e66d8ee65097a5d7cbf476b17acb3aecd44976c4ac4e1af430",
+  "fundingOrigin": "99592ef061d47a778b4fe86a819d76f48d79bc68f8fa8dc2c3fc645ad181a1cb:0",
+  "finalGameId": "04cabb703df826c26bd2c9b71ea405e3d47eebdcab8cbff07097ca6d7efe6b1b",
+  "handsPlayed": 2,
+  "setupMs": 56245.835,
+  "redealMs": 31630.835,
+  "gameOrRedealBroadcasts": 0,
+  "uniqueCashoutTransactions": 1,
+  "cashout": {
+    "txid": "5415462a40065066862c64bdfd42da60a9e6e34713a1132d4f05f79aee06538d",
+    "confirmed": true,
+    "outputs": [21845, 22244],
+    "fee": 21,
+    "bothPlayersLeft": true
+  },
+  "validation": {
+    "nativeTerminalCloseAndCheckpointRecovery": "passed",
+    "javascriptTests": 50,
+    "staticModuleServingTest": "passed",
+    "paidOutTableReopened": true,
+    "backToLobbyClicked": true,
+    "browserWalletBalanceAfterPayout": 44089,
+    "walletNote": "The two browser seats share this browser profile's wallet; distinct canonical destinations are checked by the native test.",
+    "servedFinalAssetsMatchWorkspace": true
+  }
+}

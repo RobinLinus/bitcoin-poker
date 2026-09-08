@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 4,
+  "deploymentId": "mutinynet-onchain-test",
+  "relay": {
+    "apiBasePath": "/api/v1",
+    "pollIntervalMs": 1400,
+    "requestTimeoutMs": 10000,
+    "maxPayloadBase64Bytes": 22369624,
+    "kinds": {
+      "ready": "session.ready.v1",
+      "nonceCommit": "client.nonce-commit.v1",
+      "nonceReveal": "client.nonce-reveal.v1",
+      "nonceReady": "client.nonce-ready.v1",
+      "stagingFunding": "client.staging-funding.v2",
+      "originPackage": "client.origin-package.v2",
+      "originRefundSignature": "client.origin-refund-sig.v2",
+      "originFundingSignature": "client.origin-funding-sig.v2",
+      "gameExchange": "game.exchange.v1",
+      "chainExchange": "chain.exchange.v1"
+    }
+  },
+  "chain": {
+    "backend": "esplora",
+    "esploraUrl": "https://mutinynet.com/api",
+    "explorerUrl": "https://mutinynet.com",
+    "network": "signet",
+    "genesisDisplayHashHex": "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+    "signetChallengeHex": "512102f7561d208dd9ae99bf497273e16f389bdbd6c4742ddb8e6b216e64fa2928ad8f51ae",
+    "checkpoint": {
+      "height": 339000,
+      "displayHashHex": "000001ce7d14b7c4eb8f989d3825b4212ea6a6a30f62df8bf6486b69a247242b"
+    },
+    "allowBroadcast": true,
+    "addressHrp": "tb",
+    "confirmations": {
+      "origin": 1,
+      "gameplay": 1
+    },
+    "feeFloorSatPerVbyte": 1
+  },
+  "mode": "onchainTest"
+}

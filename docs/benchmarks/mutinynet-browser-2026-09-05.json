@@ -1,0 +1,402 @@
+{
+  "network": "mutinynet",
+  "scope": "Live browser integration, two separately keyed player workers, local relay, independently queried Esplora confirmations",
+  "fundingReturn": {
+    "ok": true,
+    "fundingTxid": "a3a9daae0658f33ebfaf76814a3f374c01d39903383090d06ee6b766af863000",
+    "fundingHeight": 3401833,
+    "returnTxid": "5cff31ab9ac1ab619b5a729e128c51899ae556770e5c79544dc24fe3f9c06115",
+    "returnHeight": 3401834,
+    "escrowSat": 91400,
+    "returnedSat": 90400,
+    "totalFeesSat": 3000
+  },
+  "shortHand": {
+    "ok": true,
+    "nodes": 26,
+    "requestsPerPlayer": 31,
+    "inventoryBinding": "00c623b6b86af0932cfc7dec84a1390934dee941c1acecc13aa5d118077848c7",
+    "preparationMs": [
+      487,
+      487.4399998188019
+    ],
+    "localReloadMs": 513.9650001525879,
+    "startedAt": "2026-09-05T09:18:16.327Z",
+    "finishedAt": "2026-09-05T09:28:01.757Z",
+    "pageReloadDuringHand": true,
+    "pendingTransactionRestoredBeforeEachBroadcast": true,
+    "transactions": [
+      {
+        "phase": "funding",
+        "height": 3401836,
+        "txid": "1cf11536a5691be309a5dcf86d42bf9ed4925d96a14524e2c9ba49e63db2c9d8"
+      },
+      {
+        "phase": "activation",
+        "height": 3401837,
+        "txid": "d85656ae02ac58b7641894b012c746173ad0f725ef727c8a0a72dd5a69859d03"
+      },
+      {
+        "phase": "hole delivery A",
+        "height": 3401838,
+        "txid": "aa4bc213a0995be052fc7b16ca3e80c81b6d169f529fe36985459bf4bc6c5051"
+      },
+      {
+        "phase": "hole delivery B",
+        "height": 3401839,
+        "txid": "1a77cc6684d33afc010616553f2223a09acad8ec725225a9b7adedd3501d38e9"
+      },
+      {
+        "phase": "preflop call",
+        "height": 3401840,
+        "txid": "2c862686f80a6cf1de49ca6251bd525cb3796d8cef173c723241617710016c6a"
+      },
+      {
+        "phase": "flop first",
+        "height": 3401841,
+        "txid": "39184e25bed407bcb7fcc628f787dc6ccc317a22ee50979c88add6f2bcd660a6"
+      },
+      {
+        "phase": "flop second",
+        "height": 3401842,
+        "txid": "ce13e5ccc1ce2880e3a274cd4eaef20fad931f58c409b1e76792c482c2f4d628"
+      },
+      {
+        "phase": "turn first",
+        "height": 3401843,
+        "txid": "a401a557904a27c3836026693178bfec3e0caa6bc83e705e7cd0ec7aadd20079"
+      },
+      {
+        "phase": "turn second",
+        "height": 3401844,
+        "txid": "a9f716909ac0d727c108808dcdc155ac5f6e0954058bdce67d24ca57bc0f54f2"
+      },
+      {
+        "phase": "river first",
+        "height": 3401845,
+        "txid": "79026a2c2173308594fdc66073780bb84aaae54683a825a361face94e88f41c6"
+      },
+      {
+        "phase": "river second",
+        "height": 3401851,
+        "txid": "b2824954dd3e8a8d78bdb4ecad2af09a42d9366c592040073a3ef5400b08d3d2"
+      },
+      {
+        "phase": "Alice showdown",
+        "height": 3401852,
+        "txid": "97cbfa66f1a2b9c23ff461278eb889b2248a1d26713545f7c77b6ad04faabb0e"
+      },
+      {
+        "phase": "Bob showdown and payout",
+        "height": 3401853,
+        "txid": "926dad5c382e005630c43c85de64c5c73040706b470d3f452ece1465ed1e713a"
+      }
+    ],
+    "payoutSat": [
+      15900,
+      16300
+    ],
+    "escrowSat": 91400,
+    "fundingFeeSat": 2000,
+    "totalFeesSat": 61200,
+    "note": "Total fees recomputed from funding input, change and final payouts; the initial report build omitted older per-transaction fee fields after a code upgrade."
+  },
+  "fullHandBeforeScriptSimplification": {
+    "ok": true,
+    "scriptRevision": "before 1ccb951",
+    "gameId": "7c689fdf657bc10b63ca7c974b0e379feb81038334289f421579e1564f82bef4",
+    "wasmSha256": "f064cc0f831b601b78b633be2a6d02f0d3c7649f5dbbe40d27b30b39dc13ba04",
+    "nodes": 56132,
+    "requestsPerPlayer": 56161,
+    "initialSetupMs": 26601.14,
+    "preparationMs": [
+      24154.395,
+      25403.37
+    ],
+    "localReloadMs": 912.16,
+    "cryptoWorkersPerPlayer": 4,
+    "hardwareConcurrency": 15,
+    "inventoryBinding": "8b9df9bdf208bfe9ac3294fd111f1ef94a4822f54a2aa7b91e868cef3105d794",
+    "fundingTxid": "63730a7d6cfb7e34c52aea46e499bfe2726a2350bebd2aa58a88b2c76281881b",
+    "payoutTxid": "07f1bfd3bcaa7b8fa04836e3e1cc7434d4695eb830ef19dd32a494bc02abd832",
+    "firstHeight": 3401865,
+    "finalHeight": 3401884,
+    "confirmedTransactions": 20,
+    "payoutSat": [
+      38600,
+      38600
+    ],
+    "totalFeesSat": 102300,
+    "startedAt": "2026-09-05T09:34:21.412Z",
+    "finishedAt": "2026-09-05T09:44:57.551Z",
+    "pendingTransactionRestoredBeforeEachBroadcast": true,
+    "completedGameReload": true
+  },
+  "binaryInventorySetupTrials": [
+    {
+      "ok": true,
+      "scope": "Unfunded full setup over the relay; no broadcast",
+      "gameId": "668c4fdff7885b68a2118ad061b01193cef1552a43a8df200a300aa6caa2292b",
+      "wasmSha256": "294d29d888ca55629cb9bec56c581de8707bd6a943fea78ce47c9bb1a3d8c14d",
+      "requestsPerPlayer": 56161,
+      "initialSetupMs": 26543.225,
+      "playerStartupMs": 487.6,
+      "constructionMs": [
+        9390.63,
+        9390.245
+      ],
+      "cryptoInitializationAfterConstructionMs": [
+        82.845,
+        79.4
+      ],
+      "preparationMs": [
+        24246.83,
+        23232.165
+      ],
+      "localReloadMs": 1417.7,
+      "workersPerPlayer": 4,
+      "hardwareConcurrency": 15,
+      "inventoryBinding": "2d2151c57272796c4f81ea12d59e8c4ffc9335752c8ce6fd1fa56afb1fc34c24"
+    },
+    {
+      "ok": true,
+      "scope": "Unfunded full setup over relay; no broadcast",
+      "gameId": "527a3f0d68fd903ccad602f2016c323ef7ff9c00ef893bff804bc0174ae223c7",
+      "wasmSha256": "294d29d888ca55629cb9bec56c581de8707bd6a943fea78ce47c9bb1a3d8c14d",
+      "requestsPerPlayer": 56161,
+      "initialSetupMs": 26700.045,
+      "playerStartupMs": 436.065,
+      "constructionMs": [
+        9887.77,
+        9889.18
+      ],
+      "cryptoInitializationAfterConstructionMs": [
+        77.87,
+        77.385
+      ],
+      "preparationMs": [
+        25505.275,
+        24085.505
+      ],
+      "localReloadMs": 941.79,
+      "workersPerPlayer": 4,
+      "hardwareConcurrency": 15,
+      "inventoryBinding": "0ffdb46f6513855b7ed5eb88c2dd4d5b9d5b47acc7692be34f03a54f0dd2eecc"
+    }
+  ],
+  "scriptFingerprintMigration": {
+    "commit": "1ccb951",
+    "previous": "47139bb56b6d3c638d98fea1aaa15adf1215a4c39d7b8503865214afbf3e4fad",
+    "current": "bd1b971f06c87c284b595741f4e35729c71e838d5384f698458ce15d4840577e",
+    "afterRevealMetadataSimplification": "9f6758ce626d58e7ae76a166c48947b49deee9f0a8e5bd7200219e28c6a717da"
+  },
+  "fold": {
+    "ok": true,
+    "gameId": "69af4c4b51a9fc04333ff0219f1318315e1bca7f545b6e94e7ddd1c72c789f91",
+    "wasmSha256": "294d29d888ca55629cb9bec56c581de8707bd6a943fea78ce47c9bb1a3d8c14d",
+    "fundingTxid": "520f3785cbb2da9824cbd87d432a63fbea67a6cd9c220150ffbfc35b9b46ce48",
+    "payoutTxid": "b7cb984e9250071619a1c2058826a9118037a66408cab972dc72471196506091",
+    "fundingHeight": 3402520,
+    "payoutHeight": 3402524,
+    "confirmedTransactions": 5,
+    "totalFeesSat": 3400,
+    "payoutSat": [
+      21650,
+      21850
+    ],
+    "finishedAt": "2026-09-05T15:35:52.638Z"
+  },
+  "fullHandRetainedScripts": {
+    "ok": true,
+    "scriptRevision": "1ccb951 plus retained reveal-metadata simplification",
+    "gameId": "c558139e3813004865a8beca03eac9f69764757d8018f192423c074d776f16f7",
+    "wasmSha256": "b3cc686670e6f354638680e02db32e43188914c347f1994fcc4637dfccd13cd3",
+    "nodes": 56132,
+    "requestsPerPlayer": 56161,
+    "initialSetupMs": 34796.32,
+    "setupTargetMet": false,
+    "preparationMs": [
+      32438.175,
+      33557.17
+    ],
+    "localReloadMs": 1029.81,
+    "inventoryBinding": "923ea3a3244ba11198fc6f9995df010b63867166f7ef02d5cf9f6466ba57c216",
+    "fundingTxid": "5e16611053a54ad8596124d2b08babec0d4da7e46992d38b0d00b3f76a340ff6",
+    "payoutTxid": "f3e3b8bc1341720b67ce9438015862f4b3c325a983c5f1be20b6a935544cb029",
+    "fundingHeight": 3401923,
+    "payoutHeight": 3402532,
+    "confirmedTransactions": 20,
+    "totalFeesSat": 68200,
+    "payoutSat": [
+      32600,
+      32200
+    ],
+    "startedAt": "2026-09-05T10:06:08.777Z",
+    "finishedAt": "2026-09-05T15:40:21.666Z",
+    "recovery": [
+      "pending transaction restored before each broadcast",
+      "page and worker reload after confirmed reveals",
+      "resumed after Esplora outage and browser tab closure",
+      "pinned earlier engine restored after binary ABI upgrade"
+    ],
+    "note": "Funded hand used pre-binary-loading ABI. The same retained scripts with binary inventory startup are measured separately in binaryInventorySetupTrials.",
+    "transactions": [
+      {
+        "height": 3401923,
+        "phase": "funding",
+        "feeSat": 2000,
+        "txid": "5e16611053a54ad8596124d2b08babec0d4da7e46992d38b0d00b3f76a340ff6"
+      },
+      {
+        "height": 3401928,
+        "phase": "activation",
+        "feeSat": 1000,
+        "txid": "1cc1cf15da121a84301f63e28966e68cb02901eaf97ace86fff8981d125abb53"
+      },
+      {
+        "height": 3401929,
+        "phase": "hole-A",
+        "feeSat": 1400,
+        "txid": "638cbe7e5b563510d0001158155a53181a459bc1a5f9aed7bdcfa9e92472b788"
+      },
+      {
+        "height": 3401930,
+        "phase": "hole-B",
+        "feeSat": 1400,
+        "txid": "d214e29e3714f6939bd264e1f9a3ffff9b6c3723b61232b4d70e53fc247c4492"
+      },
+      {
+        "height": 3401931,
+        "phase": "preflop",
+        "feeSat": 1000,
+        "txid": "fd2365fa6f3a93e7226495356c065d66dbe6043e7db7640819e903731afbd5a8"
+      },
+      {
+        "height": 3401932,
+        "phase": "preflop",
+        "feeSat": 1000,
+        "txid": "e0a76bdc9583ea5fc8c06688c18073c0b7203f354beadd42aacd3b84d957de98"
+      },
+      {
+        "height": 3401933,
+        "phase": "flop-first",
+        "feeSat": 1400,
+        "txid": "fc67db4a4177db087f948bec074a9ee343b52e4d4a5cc789068e94eba8d1b454"
+      },
+      {
+        "height": 3402517,
+        "phase": "flop-second",
+        "feeSat": 1400,
+        "txid": "5d9d4a7a0c28269bae5c413f230ec3250231713ca949e2c7075edafe49caa59d"
+      },
+      {
+        "height": 3402518,
+        "phase": "flop-bet",
+        "feeSat": 1000,
+        "txid": "d77624f025b072ecc7f56ad07f65b9b2318f6bde7b0e13a15ad96d5f458bd72c"
+      },
+      {
+        "height": 3402519,
+        "phase": "flop-bet",
+        "feeSat": 1000,
+        "txid": "63b75dd71b0f2dd92ded41de0a04ee0a62bd9ae669955d16a89343047a16455b"
+      },
+      {
+        "height": 3402520,
+        "phase": "turn-first",
+        "feeSat": 1400,
+        "txid": "42d57de90f670ca094f4b0e67d33bdfa394d27c51e8f1122c89129f0903ca068"
+      },
+      {
+        "height": 3402521,
+        "phase": "turn-second",
+        "feeSat": 1400,
+        "txid": "2916cc22d2cf68a163b0686fbb59037d0c2434099599f56e6a205f2555a8a3a8"
+      },
+      {
+        "height": 3402522,
+        "phase": "turn-bet",
+        "feeSat": 1000,
+        "txid": "eba89b01be31a8756265b637bbe131fbb0e3258dc5896ac11803a76dde4b2df0"
+      },
+      {
+        "height": 3402523,
+        "phase": "turn-bet",
+        "feeSat": 1000,
+        "txid": "8ecda5212355ed574fab54f9b16f2d1fff13fb3dff375ade0eeccc9bc36c0b46"
+      },
+      {
+        "height": 3402524,
+        "phase": "river-first",
+        "feeSat": 1400,
+        "txid": "fd18c4f3c3c3e4c890dd08864421a80d2bdccf4952ce93a320edc70293202147"
+      },
+      {
+        "height": 3402525,
+        "phase": "river-second",
+        "feeSat": 1400,
+        "txid": "12359345f99b80b26abff98e8d3a04c8bcea63befa55d1495fdb5024fa20cdd4"
+      },
+      {
+        "height": 3402526,
+        "phase": "river-bet",
+        "feeSat": 1000,
+        "txid": "ce10952349315cb92fc2522d2f7c379c3632e1ac7f34cff793c168e5d541524b"
+      },
+      {
+        "height": 3402527,
+        "phase": "river-bet",
+        "feeSat": 1000,
+        "txid": "70ba8eae8468ebe6b69edf709664a5a458f54c1fd64282c3aea132886352205e"
+      },
+      {
+        "height": 3402528,
+        "phase": "Alice-showdown",
+        "feeSat": 22000,
+        "txid": "5f3073ffbc289ad57b44838022bb92bff33055762254a61797dbf5006addf8ca"
+      },
+      {
+        "height": 3402532,
+        "phase": "payout",
+        "feeSat": 24000,
+        "txid": "f3e3b8bc1341720b67ce9438015862f4b3c325a983c5f1be20b6a935544cb029"
+      }
+    ]
+  },
+  "timeout": {
+    "ok": true,
+    "gameId": "6874be9b2674493c7e99be9c9a52799f0d3889c0bd973f880614c277325e597b",
+    "wasmSha256": "294d29d888ca55629cb9bec56c581de8707bd6a943fea78ce47c9bb1a3d8c14d",
+    "fundingTxid": "ffca9c2c1b0d377fa565f8201b76749c8ba375309787c8e89888575f510e4d9d",
+    "activationTxid": "d12574c40309de9f12bb9357bee82914844dab01697ac839cfc39313a7728ff0",
+    "payoutTxid": "b3ee8c140d7fbc91e2f34b06cb6f1895cd28375bce541f99074d1178694b6d98",
+    "activationHeight": 3402527,
+    "payoutHeight": 3402537,
+    "csvBlocks": 2,
+    "confirmedTransactions": 3,
+    "totalFeesSat": 2000,
+    "payoutSat": [
+      22650,
+      22250
+    ],
+    "finishedAt": "2026-09-05T15:42:58.650Z",
+    "note": "Timeout uses the stored opponent authorization and beneficiary live signature; premature rejection separately qualified in Core."
+  },
+  "interruptedPreparationRecovery": {
+    "ok": true,
+    "gameId": "9decb7699c0ae7f7d314bb199bddd71dd7d832863c1692aaf0ec3af8dc1af8b8",
+    "wasmSha256": "294d29d888ca55629cb9bec56c581de8707bd6a943fea78ce47c9bb1a3d8c14d",
+    "requestsPerPlayer": 56161,
+    "resumedSetupMs": 26760.12,
+    "localReloadMs": 1425.195,
+    "receivedBatches": [
+      168,
+      146
+    ],
+    "inventoryBinding": "c9dc56ddc1f5d376c23ae67c16e6821d8977d0033acd7a2e219cb8ec5a6a4d5e",
+    "pageRefreshedWhilePreparing": true,
+    "browserTabsClosedAndReopened": true,
+    "note": "Recovery time excludes the interrupted attempt and offline interval; durable relay replay includes duplicate verified batches."
+  },
+  "aggregateLiveFeesSat": 240100
+}

@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-05",
+  "network": "MutinyNet",
+  "status": "PASS",
+  "driver": "Browser TableSession with two channel-worker instances",
+  "gameId": "64dd40066f510ff783e16882093de2d9d5d101131af2084e80fabb3cd36973ae",
+  "wasmSha256": "c747e980acca8f5129e2e535dbe6bed814d12c3e4aa70b151ce591ffe92e6fee",
+  "fundingTxid": "7bc011c1d75ccfe46ce93401b73ca4d2b3f6775b2349c58ca5e5cd2c707e00ea",
+  "uniqueFundingTransactions": 1,
+  "fundingPublishHandlerCalls": 4,
+  "inGameBroadcastAttempts": 0,
+  "fundingUnspent": true,
+  "terminalNode": "15d14bace388dd6fe32f6b110b037fa2cb2a5a9c0b92ac4e5df78e5ae548160d",
+  "finalBalances": [
+    20200,
+    19800
+  ],
+  "bettingAgreementMs": [
+    597.65,
+    821.81,
+    819.78,
+    695.155,
+    745.25,
+    695.34,
+    858.035,
+    914.07
+  ],
+  "setupIncludingFundingMs": 386822.12,
+  "limitations": [
+    "Setup included repeated owner-1 preparation attempts; this is not a 30-second setup qualification.",
+    "This run covers one cooperative hand, not next-hand root retirement or forced-exit qualification.",
+    "Later journal-write optimization requires a separate rerun."
+  ]
+}

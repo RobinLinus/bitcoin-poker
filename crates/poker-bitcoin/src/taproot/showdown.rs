@@ -1,14 +1,56 @@
 //! Showdown programs.
 use super::{
     ALICE_SEVEN_SLOTS, BOB_SEVEN_SLOTS, BitcoinBackendError, Builder, HandCategory, KeyContext,
-    LamportPublicKey, LamportPurpose, OP_CHECKSIGVERIFY, OP_DROP, OP_DUP, OP_ENDIF,
-    OP_FROMALTSTACK, OP_GREATERTHAN, OP_GREATERTHANOREQUAL, OP_IF, OP_LESSTHANOREQUAL, OP_NUMEQUAL,
+    LamportPublicKey, LamportPurpose, OP_CHECKSIGVERIFY, OP_DUP, OP_ENDIF, OP_FROMALTSTACK,
+    OP_GREATERTHAN, OP_GREATERTHANOREQUAL, OP_IF, OP_LESSTHANOREQUAL, OP_NUMEQUAL,
     OP_NUMEQUALVERIFY, OP_SUB, OP_SWAP, OP_TOALTSTACK, OP_VERIFY, ScriptBuf, ShowdownOutcome,
     append_candidate_selector, append_distinct_seven, append_eval5, append_eval5_for_category,
     append_keys, append_length_prefixed, append_score_certificate, append_signature_checks,
     append_subset_selection, root_node_id, validate_authorizers, validate_identifier,
     validate_lamport_context, validate_xonly,
 };
+use std::sync::Arc;
+
+/// Game-scoped candidate encodings, normalized once from a verified deal.
+#[derive(Clone, Debug)]
+pub struct PreparedShowdownCards {
+    deal_id: [u8; 32],
+    keys: Vec<Arc<[[u8; 32]]>>,
+}
+impl PreparedShowdownCards {
+    /// Normalize all 927 candidates once for all showdown programs.
+    ///
+    /// # Errors
+    /// Rejects any degenerate candidate point.
+    pub fn new(deal: &dealer_protocol::VerifiedAcceptedDeal) -> Result<Self, BitcoinBackendError> {
+        let keys = deal
+            .catalogue()
+            .keys
+            .iter()
+            .map(|slot| {
+                slot.iter()
+                    .map(|key| {
+                        dealer_protocol::point_xonly(key).map_err(|_| {
+                            BitcoinBackendError::InvalidXOnlyPublicKey {
+                                purpose: "dlog candidate",
+                            }
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Arc::from)
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            deal_id: dealer_protocol::accepted_body_hash(&deal.as_deal().body),
+            keys,
+        })
+    }
+    /// Accepted deal identifier shared by all game scripts.
+    #[must_use]
+    pub const fn deal_id(&self) -> [u8; 32] {
+        self.deal_id
+    }
+}
 
 /// Complete public inputs to Alice's showdown predicate.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,6 +58,8 @@ pub struct AliceShowdownProgram {
     pub(super) chain_game_id: [u8; 32],
     pub(super) node_id: [u8; 32],
     openings: ShowdownOpenings,
+    script: Arc<ScriptBuf>,
+    pub(super) script_hash: [u8; 32],
     pub(super) score_public_key: LamportPublicKey,
     pub(super) authorizers: [[u8; 32]; 2],
     pub(super) claimed_category: Option<HandCategory>,
@@ -35,8 +79,28 @@ impl AliceShowdownProgram {
         score_public_key: LamportPublicKey,
         authorizers: [[u8; 32]; 2],
     ) -> Result<Self, BitcoinBackendError> {
+        Self::from_prepared(
+            &PreparedShowdownCards::new(deal)?,
+            chain_game_id,
+            node_id,
+            score_public_key,
+            authorizers,
+        )
+    }
+
+    /// Construct using game-scoped candidate encodings.
+    ///
+    /// # Errors
+    /// Rejects invalid node, identity, or score-key contexts.
+    pub fn from_prepared(
+        cards: &PreparedShowdownCards,
+        chain_game_id: [u8; 32],
+        node_id: [u8; 32],
+        score_public_key: LamportPublicKey,
+        authorizers: [[u8; 32]; 2],
+    ) -> Result<Self, BitcoinBackendError> {
         Self::new_inner(
-            ShowdownOpenings::from_deal(deal, ALICE_SEVEN_SLOTS)?,
+            ShowdownOpenings::from_prepared(cards, ALICE_SEVEN_SLOTS),
             chain_game_id,
             node_id,
             score_public_key,
@@ -64,14 +128,31 @@ impl AliceShowdownProgram {
             ),
         )?;
         validate_authorizers(&authorizers)?;
-        Ok(Self {
+        let mut program = Self {
             chain_game_id,
             node_id,
             openings,
+            script: Arc::new(ScriptBuf::new()),
+            script_hash: [0; 32],
             score_public_key,
             authorizers,
             claimed_category,
-        })
+        };
+        program.script = Arc::new(program.build_tapscript());
+        super::validate_script_size(&program.script)?;
+        program.script_hash = super::tapleaf_hash(&program.script);
+        Ok(program)
+    }
+
+    /// Bind a validated game template to one logical node.
+    ///
+    /// # Errors
+    /// Rejects a zero node identifier.
+    pub fn at_node(&self, node_id: [u8; 32]) -> Result<Self, BitcoinBackendError> {
+        validate_identifier(node_id, "Alice showdown node id")?;
+        let mut program = self.clone();
+        program.node_id = node_id;
+        Ok(program)
     }
 
     /// Category proved by this individual Taproot leaf.
@@ -94,6 +175,10 @@ impl AliceShowdownProgram {
     }
 
     pub(super) fn to_tapscript(&self) -> ScriptBuf {
+        self.script.as_ref().clone()
+    }
+
+    fn build_tapscript(&self) -> ScriptBuf {
         let builder = Builder::new();
         let builder = self.openings.append_to(builder);
         let builder = append_subset_selection(builder);
@@ -118,6 +203,8 @@ pub struct BobPayoutProgram {
     pub(super) alice_showdown_node_id: [u8; 32],
     pub(super) outcome: ShowdownOutcome,
     openings: ShowdownOpenings,
+    script: Arc<ScriptBuf>,
+    pub(super) script_hash: [u8; 32],
     pub(super) alice_score_public_key: LamportPublicKey,
     pub(super) bob_score_public_key: LamportPublicKey,
     pub(super) alice_authorizer: [u8; 32],
@@ -143,8 +230,35 @@ impl BobPayoutProgram {
         bob_score_public_key: LamportPublicKey,
         terminal_authorizers: [[u8; 32]; 2],
     ) -> Result<Self, BitcoinBackendError> {
+        Self::from_prepared(
+            &PreparedShowdownCards::new(deal)?,
+            chain_game_id,
+            node_id,
+            alice_showdown_node_id,
+            outcome,
+            alice_score_public_key,
+            bob_score_public_key,
+            terminal_authorizers,
+        )
+    }
+
+    /// Construct using game-scoped candidate encodings.
+    ///
+    /// # Errors
+    /// Rejects invalid node, identity, or score-key contexts.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_prepared(
+        cards: &PreparedShowdownCards,
+        chain_game_id: [u8; 32],
+        node_id: [u8; 32],
+        alice_showdown_node_id: [u8; 32],
+        outcome: ShowdownOutcome,
+        alice_score_public_key: LamportPublicKey,
+        bob_score_public_key: LamportPublicKey,
+        terminal_authorizers: [[u8; 32]; 2],
+    ) -> Result<Self, BitcoinBackendError> {
         Self::new_inner(
-            ShowdownOpenings::from_deal(deal, BOB_SEVEN_SLOTS)?,
+            ShowdownOpenings::from_prepared(cards, BOB_SEVEN_SLOTS),
             chain_game_id,
             node_id,
             alice_showdown_node_id,
@@ -189,18 +303,41 @@ impl BobPayoutProgram {
                 LamportPurpose::BobScore24Bit,
             ),
         )?;
-        Ok(Self {
+        let mut program = Self {
             chain_game_id,
             node_id,
             alice_showdown_node_id,
             outcome,
             openings,
+            script: Arc::new(ScriptBuf::new()),
+            script_hash: [0; 32],
             alice_score_public_key,
             bob_score_public_key,
             alice_authorizer: terminal_authorizers[0],
             bob_live_key: terminal_authorizers[1],
             claimed_category,
-        })
+        };
+        program.script = Arc::new(program.build_tapscript());
+        super::validate_script_size(&program.script)?;
+        program.script_hash = super::tapleaf_hash(&program.script);
+        Ok(program)
+    }
+
+    /// Bind a validated game/outcome template to its two logical nodes.
+    ///
+    /// # Errors
+    /// Rejects zero node identifiers.
+    pub fn at_node(
+        &self,
+        node_id: [u8; 32],
+        alice_node_id: [u8; 32],
+    ) -> Result<Self, BitcoinBackendError> {
+        validate_identifier(node_id, "Bob payout node id")?;
+        validate_identifier(alice_node_id, "preceding Alice showdown node id")?;
+        let mut program = self.clone();
+        program.node_id = node_id;
+        program.alice_showdown_node_id = alice_node_id;
+        Ok(program)
     }
 
     /// Category proved by this individual Taproot leaf.
@@ -227,6 +364,10 @@ impl BobPayoutProgram {
     }
 
     pub(super) fn to_tapscript(&self) -> ScriptBuf {
+        self.script.as_ref().clone()
+    }
+
+    fn build_tapscript(&self) -> ScriptBuf {
         let builder = Builder::new();
         let builder = self.openings.append_to(builder);
         let builder = append_subset_selection(builder);
@@ -260,45 +401,32 @@ impl BobPayoutProgram {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ShowdownOpenings {
     pub(super) deal_id: [u8; 32],
-    pub(super) keys: Vec<Vec<[u8; 32]>>,
+    pub(super) keys: Vec<Arc<[[u8; 32]]>>,
 }
 
 impl ShowdownOpenings {
-    pub(super) fn from_deal(
-        deal: &dealer_protocol::VerifiedAcceptedDeal,
-        slots: [u8; 7],
-    ) -> Result<Self, BitcoinBackendError> {
-        let mut keys = Vec::with_capacity(7);
-        for slot in slots {
-            let mut candidates = Vec::with_capacity(103);
-            for key in &deal.catalogue().keys[usize::from(slot)] {
-                candidates.push(dealer_protocol::point_xonly(key).map_err(|_| {
-                    BitcoinBackendError::InvalidXOnlyPublicKey {
-                        purpose: "dlog candidate",
-                    }
-                })?);
-            }
-            keys.push(candidates);
+    fn from_prepared(cards: &PreparedShowdownCards, slots: [u8; 7]) -> Self {
+        Self {
+            deal_id: cards.deal_id,
+            keys: slots
+                .iter()
+                .map(|&slot| Arc::clone(&cards.keys[usize::from(slot)]))
+                .collect(),
         }
-        Ok(Self {
-            deal_id: dealer_protocol::accepted_body_hash(&deal.as_deal().body),
-            keys,
-        })
     }
 
     pub(super) fn encode_into(&self, encoded: &mut Vec<u8>) {
         encoded.push(255);
         encoded.extend_from_slice(&self.deal_id);
         for slot in &self.keys {
-            for key in slot {
+            for key in slot.iter() {
                 encoded.extend_from_slice(key);
             }
         }
     }
 
     pub(super) fn append_to(&self, mut builder: Builder) -> Builder {
-        let Self { deal_id, keys } = self;
-        builder = builder.push_slice(deal_id).push_opcode(OP_DROP);
+        let Self { keys, .. } = self;
         // Pair order: signature, raw sum. The last slot is at the stack top.
         for candidates in keys.iter().rev() {
             builder = builder

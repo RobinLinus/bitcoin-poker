@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-08",
+  "comparison": {
+    "conditions": "Sequential runs against one fixed local relay, 125 ms additional WebSocket latency in each direction; real cryptography, empty wallets, synthetic unfunded origin. One trial per variant.",
+    "before": {
+      "dealerMs": 4882.212917,
+      "preparationMs": 9411.262292,
+      "totalMs": 14293.475209,
+      "errors": []
+    },
+    "after": {
+      "dealerMs": 4900.169458,
+      "preparationMs": 7379.065375,
+      "totalMs": 12279.234833,
+      "errors": []
+    }
+  },
+  "playable": {
+    "conditions": "Two persistent independent Chrome profiles; same fixed relay and added latency; real MutinyNet funding and confirmed cashout.",
+    "status": "PASS",
+    "setupMs": 45173,
+    "totalMs": 135042,
+    "pageErrors": [],
+    "hands": [
+      {
+        "startedMs": 45173,
+        "actionableMs": 46439,
+        "stacks": [
+          20000,
+          20000
+        ],
+        "settledStacks": [
+          15200,
+          24800
+        ],
+        "preparationMs": 7430.72000002861
+      },
+      {
+        "startedMs": 79245,
+        "actionableMs": 80457,
+        "handoverMs": 6982,
+        "redealToActionMs": 8194,
+        "stacks": [
+          15200,
+          24800
+        ],
+        "settledStacks": [
+          15400,
+          24600
+        ],
+        "preparationMs": 2147.9950001239777
+      },
+      {
+        "startedMs": 102167,
+        "actionableMs": 103510,
+        "handoverMs": 7876,
+        "redealToActionMs": 9219,
+        "stacks": [
+          15400,
+          24600
+        ],
+        "settledStacks": [
+          15200,
+          24800
+        ],
+        "preparationMs": 2704.569999933243
+      }
+    ]
+  },
+  "contracts": {
+    "passed": 135
+  }
+}

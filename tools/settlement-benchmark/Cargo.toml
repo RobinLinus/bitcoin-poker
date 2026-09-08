@@ -1,0 +1,21 @@
+[package]
+name = "settlement-benchmark"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bitcoin.workspace = true
+dealer-protocol.workspace = true
+dealer-bitcoin.workspace = true
+poker-bitcoin.workspace = true
+poker-settlement.workspace = true
+poker-settlement-types.workspace = true
+poker-score-ots.workspace = true
+rand_chacha.workspace = true
+getrandom = { version = "=0.2.17", features = ["custom"] }

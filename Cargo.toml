@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "apps/relay", "tools/deal-tools"]
+members = ["crates/*", "apps/relay", "tools/deal-tools", "tools/settlement-benchmark"]
 default-members = ["apps/relay", "crates/poker-settlement"]
 
 [workspace.package]
@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 authors = ["Bitcoin Poker contributors"]
 
 [workspace.dependencies]
-axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "ws"] }
 base64 = "=0.23.1"
 bitcoin = { version = "=0.32.102", default-features = false, features = ["rand-std", "secp-recovery", "std"] }
 bitcoin_hashes = "=0.14.101"
@@ -44,6 +44,8 @@ poker-funding = { path = "crates/poker-funding" }
 poker-funding-wasm = { path = "crates/poker-funding-wasm" }
 poker-relay = { path = "apps/relay" }
 poker-score-ots = { path = "crates/poker-score-ots" }
+poker-session = { path = "crates/poker-session" }
+poker-session-wasm = { path = "crates/poker-session-wasm" }
 poker-settlement = { path = "crates/poker-settlement" }
 poker-settlement-types = { path = "crates/poker-settlement-types" }
 poker-store-sqlite = { path = "crates/poker-store-sqlite" }
