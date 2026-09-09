@@ -87,6 +87,7 @@ impl RelayServer {
         let security_headers = SecurityHeaders::new(&deployment)?;
         let mut connection = Connection::open_in_memory().map_err(|_| RelayBuildError::Database)?;
         configure_database(&mut connection)?;
+        matchmaking::configure(&connection).map_err(|_| RelayBuildError::Database)?;
         let now = now_ms().map_err(|_| RelayBuildError::Database)?;
         connection
             .execute(
@@ -177,6 +178,7 @@ impl RelayServer {
             )
             .route("/api/v1/socket", get(socket::upgrade))
             .route("/api/v1/config", get(get_deployment_config))
+            .route("/api/v1/matchmaking", post(matchmaking::handle))
             .route("/api/v1/games", post(create_game))
             .route("/api/v1/games/{game_id}/ack", post(routes::ack_messages))
             .route("/api/v1/games/{game_id}/poll", post(routes::poll_session))
@@ -654,6 +656,7 @@ use store::{
 mod auth;
 use auth::{authorize, bearer_token, capability_digest, constant_time_eq, decode_capability};
 
+mod matchmaking;
 mod routes;
 use routes::{create_game, get_deployment_config, get_game, get_messages, join_game, post_message};
 

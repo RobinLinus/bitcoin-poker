@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TableSession } from "./table-session.js";
-import { tableFeedback, idleFeedback, playerError } from "./table-feedback.js";
+import { tableFeedback, tableActivity, idleFeedback, playerError } from "./table-feedback.js";
 
 function setup() {
   const frames = [];
@@ -113,4 +113,29 @@ test('opening blinds stay in front of their owners throughout hole-card delivery
 test('a shared-wallet input shortage asks for another payment',()=>{
   assert.equal(idleFeedback({data:{walletNeeded:23000,walletSeparatePayment:true}}).title,'Send another payment to this wallet');
   assert.equal(idleFeedback({data:{walletNeeded:23000}}).title,'Waiting for wallet funds');
+});
+
+
+test("pending moves animate only their actor from either seat", () => {
+  for (const actor of [0, 1]) for (const role of [0, 1]) {
+    const view = {betting:true, actor, role, pendingMove:true};
+    for (const submission of [null, ...(actor === role ? [{kind:"action"}] : [])]) {
+      const activity = tableActivity({data:{}, view, submission});
+      assert.equal(activity.local, actor === role);
+      assert.equal(activity.opponent, actor !== role);
+    }
+    const idle = tableActivity({data:{},view:{...view,pendingMove:false}});
+    assert.equal(idle.local || idle.opponent, false);
+  }
+});
+test("dealing, cashout and errors never animate player seats", () => {
+  for (const state of [
+    {view:{betting:false,phase:"FlopRevealFirst",pendingMove:true}},
+    {view:{terminal:true,pendingMove:true}},
+    {data:{leaveRequested:true},view:{betting:true,pendingMove:true,actor:0,role:0}},
+    {error:"Disconnected",view:{betting:true,pendingMove:true,actor:0,role:0}},
+  ]) {
+    const activity=tableActivity({data:{peer:{}},...state});
+    assert.equal(activity.local || activity.opponent, false);
+  }
 });

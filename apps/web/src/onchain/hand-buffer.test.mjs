@@ -62,6 +62,17 @@ test('local payout completion can overlap selection with the peer readiness exch
  await assert.rejects(buffer.candidate([20100,19900]),/Inventory disagreement/);
 });
 
+test('a retrying candidate does not restart or pause its parent hand',async()=>{
+ const child={data:{prepared:{},peer:{ready:true}},error:'Preparation exchange timed out',pollPaused:false};
+ const table={view:{slot:{index:0}},data:{buffer:{jobs:[{id:'candidate',index:1,deferredPayouts:true}],done:['candidate']}}};
+ const buffer=new HandBuffer(table);buffer.pump=()=>{};buffer.sessions.set('candidate',child);
+ assert.equal(await buffer.candidate([20000,20000]),null);
+ child.pollPaused=true;
+ await assert.rejects(buffer.candidate([20000,20000]),/timed out/);
+ child.error=null;child.data.payoutsBound=true;
+ assert.equal(await buffer.candidate([20000,20000]),child);
+});
+
 
 for(const view of [{terminal:true},{betting:false}])test(`handover reserves preparation for the nearest hand ${JSON.stringify(view)}`,async()=>{
  const opened=[],table={data:{sender:'alice',gameId:'cc'.repeat(32),terms:{stacks:[20000,20000]},peer:{}},view:{slot:{index:0},channelReady:true,...view},save:async()=>{},player:{call:async(_,args)=>({slot:{index:args.index}})}};

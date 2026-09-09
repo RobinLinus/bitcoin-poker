@@ -5,6 +5,19 @@ const hex = value => Array.from(value, x => x.toString(16).padStart(2,'0')).join
 const decode = value => JSON.parse(new TextDecoder().decode(value));
 const point = value => { const [txid,vout] = value.split(':'); return {displayTxid:unhex(txid),vout:Number(vout)}; };
 
+// Revision 1 spans both sides of entry: the initial package has no executable
+// paths, then receiving Entry adds exactly one launch per owner. This is forward
+// progress within the same revision, never permission to replace an entry path.
+function completesEntry(previous, next) {
+  if(previous.version!==1 || previous.revision!==1 || next.revision!==1 ||
+     previous.paths?.length!==2 || next.paths?.length!==2 ||
+     !previous.paths.every(path=>Array.isArray(path)&&path.length===0) ||
+     !next.paths.every(path=>Array.isArray(path)&&path.length===1&&Array.isArray(path[0])&&path[0].length>0) ||
+     previous.penalties?.length!==0 || next.penalties?.length!==0)return false;
+  const {paths:oldPaths,...oldIdentity}=previous,{paths:newPaths,...newIdentity}=next;
+  return JSON.stringify(oldIdentity)===JSON.stringify(newIdentity);
+}
+
 export class BrowserDefense {
   constructor(config, store, chain = createEsploraChainAdapter(config), inspect = inspectTransaction) {
     this.store=store; this.chain=chain; this.inspect=inspect; this.confirmed=new Set();
@@ -15,7 +28,7 @@ export class BrowserDefense {
     const pkg=decode(payload), id=`defense/${gameId}`;
     if (await this.store.read('checkpoints',id)) {
       const old=await this.store.load(id,gameId), previous=decode(old);
-      if (previous.revision>pkg.revision || (previous.revision===pkg.revision && hex(new Uint8Array(await crypto.subtle.digest('SHA-256',old)))!==digest)) {
+      if (previous.revision>pkg.revision || (previous.revision===pkg.revision && hex(new Uint8Array(await crypto.subtle.digest('SHA-256',old)))!==digest && !completesEntry(previous,pkg))) {
         throw new Error('Saved channel state is stale');
       }
     }

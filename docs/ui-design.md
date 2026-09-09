@@ -5,7 +5,9 @@ what is happening from the objects on the table, without protocol explanations.
 
 - Cards belong to one hand. Collect both players’ hole cards and the community
   cards as soon as cashout starts; keep them cleared after cashout completes.
-  Show the cashout status prominently in the center of the cleared table.
+  Show the cashout status prominently in the center of the cleared table. Once
+  the payout is confirmed, return automatically to the lobby and
+  refresh the wallet balance; do not require a second “Back to lobby” click.
 - Between consecutive hands, allow a brief look at the previous hand after the
   pot is distributed. Start preparation in the background without a label over the old hand.
   Collect the old cards after about 3.5 seconds, then show “Dealing next hand…”
@@ -43,3 +45,18 @@ what is happening from the objects on the table, without protocol explanations.
 - Keep card/seat activity during live play separate from centered loading states.
   Errors and required user actions use consistent panel styling, but do not
   imply ongoing work with an indeterminate bar when processing has stopped.
+
+## Public and private tables
+
+- “Play now” is the primary lobby action. Show the buy-in before the click;
+  “Create private table” is secondary.
+- While matching, show the local seat and “Finding an opponent…” using the shared
+  centered progress panel with a Cancel action. Keep cards and seat activity
+  rings absent. Never ask a public player to share an invite.
+- Show the opponent as soon as the pair is assigned, then continue into the normal
+  dealing flow. Matched players stay together across hands until someone leaves.
+- Restore matchmaking directly on refresh. Do not briefly show the lobby or
+  create another waiting room. Never replace an opponent inside a funded table.
+
+- Never pair two windows using the same wallet. Matchmaking identity follows the
+  wallet, not a randomly generated browser or tab identity.

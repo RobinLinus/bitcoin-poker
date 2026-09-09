@@ -46,3 +46,27 @@ test('background monitoring observes shared channel funding once per pass',async
  {outpointStatus:async()=>{observed++;return {state:'unspent'};}});
  await monitor.tick();assert.equal(observed,1);
 });
+
+test('reconnect permits initial entry progress within revision 1, but never rewrites an entered path',async()=>{
+ const records=new Map(),store={read:async(_,id)=>records.get(id),load:async id=>records.get(id),save:async(id,_,bytes)=>records.set(id,bytes)};
+ const monitor=new BrowserDefense(null,store,{outpointStatus:async()=>({state:'unspent',creatingStatus:{state:'confirmed'}})});
+ const initial={version:1,revision:1,hand:'44'.repeat(32),...pkg,paths:[[],[]],penalties:[]};
+ const entered={...initial,paths:[[[10]],[[20]]]};
+ const register=async p=>{const bytes=new TextEncoder().encode(JSON.stringify(p));return monitor.register('entry',bytes,Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex'));};
+ await register(initial);
+ const initialBytes=records.get('defense/entry');
+ for(const invalid of [
+  {...entered,hand:'55'.repeat(32)}, {...entered,funding:'66'.repeat(32)+':0'},
+  {...entered,roots:[txid,'77'.repeat(32)]}, {...entered,version:2},
+  {...entered,paths:[[[10]],[]]}, {...entered,paths:[[[10],[11]],[[20]]]},
+  {...entered,penalties:[[1]]},
+ ]){await assert.rejects(register(invalid),/stale/);assert.equal(records.get('defense/entry'),initialBytes);}
+ await register(entered);
+ await register(entered); // Exact reconnect replay is idempotent.
+ const enteredBytes=records.get('defense/entry');
+ await assert.rejects(register(initial),/stale/);
+ await assert.rejects(register({...entered,paths:[[[11]],[[20]]]}),/stale/);
+ assert.equal(records.get('defense/entry'),enteredBytes);
+ await register({...entered,revision:2});
+ await assert.rejects(register(entered),/stale/);
+});

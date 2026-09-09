@@ -1,6 +1,6 @@
 # One-click public matchmaking
 
-Status: implementation plan; no implementation or deployment yet.
+Status: implemented and deployed to https://poker.bitvm.org/ on September 8, 2026. Verified locally and on the hosted app with isolated wallet/session fixtures.
 
 ## Product flow
 
@@ -17,9 +17,9 @@ Status: implementation plan; no implementation or deployment yet.
   “random” means an unknown opponent, with no skill/rating system for this scope.
 - Once paired, show the opponent's name immediately and automatically enter the
   existing setup/dealing flow. No invite popup or additional confirmation.
-- Proposed session policy: the same pair continues playing until someone leaves.
-  This is awaiting the user's answer. Do not silently refill a funded table;
-  finish cashout and let the remaining player choose Play now again.
+- Confirmed session policy: the same pair continues playing consecutive hands
+  until someone leaves. Do not silently refill a funded table; finish cashout
+  and let the remaining player choose Play now again.
 
 ## Relay changes
 
@@ -56,8 +56,9 @@ adds temporary discovery and seat allocation, not poker logic or persistence.
   use the same poker, funding, reconnect, automatic redeal and cashout code.
 - Track explicit entry states: onboarding, matching, matched/setup, playing,
   cancelling, and error. Prevent duplicate clicks and coordinate the same ticket
-  across tabs. Do not match the same browser participant with itself; without
-  accounts, this cannot establish unique human identity across separate browsers.
+  across tabs. Derive the matchmaking identity from the public wallet script so
+  the same wallet cannot occupy both seats, including across browser profiles.
+  Separate wallets cannot be identified as the same person without accounts.
 - Check wallet availability against the required buy-in and fee reserve, not
   merely a positive balance. Keep funds in the wallet while waiting; start actual
   buy-in funding only after both peers are assigned and ready. Reuse exact fee
@@ -86,3 +87,22 @@ adds temporary discovery and seat allocation, not poker logic or persistence.
 - Rebuild the client and embedded relay, restart locally with its existing
   configuration, and verify served assets. Review the shared checkout and deploy
   only the intended changes following deployments/ec2/README.md.
+
+## Implemented details
+
+- `POST /api/v1/matchmaking` accepts an opaque ticket, wallet ID, proposed
+  room/seat credentials and `enter`, `poll`, or `cancel`. Polling holds the request
+  for up to 15 seconds and wakes immediately on relay notifications.
+- Waiting seats have 45-second renewable leases. A reserved pair must be
+  acknowledged by both browsers before becoming matched. Cancelling a reservation
+  expires the other ticket so that browser can seek another match. A committed
+  match wins a late cancellation; the browser preserves and opens that assignment.
+- Discovery uses only matchmaking entries for the current single supported game
+  configuration. Private rooms have no queue entry. Multiple stake pools are not
+  exposed by this version.
+- Browser ticket storage and the Web Locks API prevent duplicate waiting requests.
+  An active public table pointer sends returning players back to that table until
+  cashout completes. Nothing is funded while waiting in matchmaking.
+- The reserve precheck uses the existing Wasm sizing calculation and the same
+  buy-in requirement formula as table funding. Funding still verifies exact peer
+  terms and actual inputs before any broadcast.

@@ -1,4 +1,5 @@
 import {releaseChannelRoom as releaseRelayRoom} from './channel-inbox.js';
+import {trace} from './diagnostics.js';
 
 // Runs on the completed table. The successor remains hidden and cannot play
 // until both old hand revocations have been persisted and acknowledged.
@@ -55,7 +56,16 @@ export async function continueChannelHand() {
   // Adopt in place so UI callbacks and the E2E driver keep the same TableSession.
   clearInterval(child.timer);clearInterval(this.timer);
   if(child.pollTask) await child.pollTask;
-  this.player.close();if(!this.sharedWallet)this.wallet?.close();releaseRelayRoom(old);
+  // Both the playable successor and redirect are durable. Let it play while
+  // the old worker compacts its own checkpoint under its existing player lock.
+  // Closing this page simply leaves cleanup for the next startup.
+  const retiredPlayer=this.player,cleanupStarted=performance.now();
+  retiredPlayer.onprogress=null;
+  void retiredPlayer.call('compactRetired',{successor:child.data.gameId})
+    .then(compacted=>trace('channel.retired.cleanup.done',{gameId:old.gameId,sender:old.sender,compacted,durationMs:Math.round(performance.now()-cleanupStarted)}))
+    .catch(error=>trace('channel.retired.cleanup.error',{gameId:old.gameId,sender:old.sender,error:error.message||error.name}))
+    .finally(()=>retiredPlayer.close());
+  if(!this.sharedWallet)this.wallet?.close();releaseRelayRoom(old);
   this.data=child.data;this.player=child.player;this.wallet=child.wallet;this.sharedWallet=child.sharedWallet;this.chain=child.chain;
   this.view=child.view;this.nextSession=null;this.predealTask=null;
   this.progress=null;this.handEndedAt=null;this.submission=null;this.actionError=null;

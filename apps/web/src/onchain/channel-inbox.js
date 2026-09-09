@@ -6,6 +6,53 @@ import {encodeBinary as encode,decodeBinary as decode} from './binary-codec.js';
 const stores=new Map(),roomIds=new Map();
 const laneFor=kind=>{const match=/^channel\.(payout\.)?([01])\./.exec(kind);return match?Number(match[2])+(match[1]?3:1):0;};
 
+const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+async function savedHeader(store,id,record) {
+  if(record.retiredTo)return record.retiredHeader;
+  if(!record.journal)return null;
+  const bytes=await store.load(`${id}/journal/${record.journal}`,id);
+  if(await digest(bytes)!==record.journal || bytes.length<12 || new TextDecoder().decode(bytes.subarray(0,8))!=='CHJOUR01')return null;
+  const size=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint32(8,true);
+  if(size>bytes.length-12)return null;
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(12,12+size)));
+}
+
+// Caller holds the old hand's player lock. The successor pointer is saved only
+// after authorizePlay is durable. Keep its authorization proof even if that
+// successor has itself retired, so startup cleanup may run in either order.
+export async function compactRetiredChannel(room,successor,store=new PreparationCheckpointStore(`poker-channel-player-${room.sender}`)) {
+  const id=room.gameId;
+  if(!/^[a-f0-9]{64}$/.test(id)||!/^[a-f0-9]{64}$/.test(successor)||id===successor)return false;
+  if(!await store.read('checkpoints',id)||!await store.read('checkpoints',successor))return false;
+  const old=decode(await store.load(id,id)),next=decode(await store.load(successor,successor));
+  if(old.retiredTo)return false;
+  const [parent,child]=await Promise.all([savedHeader(store,id,old),savedHeader(store,successor,next)]);
+  if(parent?.version!==1||child?.version!==1||!parent.entered||!parent.peer_ready||!Array.isArray(parent.accepted)||!parent.handoff?.watched||!parent.handoff.peer_ack||parent.pending||parent.closing||
+     !child.entered||!child.peer_ready||!Array.isArray(child.play_authorization)||!child.play_authorization.length||
+     !Array.isArray(child.entry_authorization)||!child.entry_authorization.length||
+     next.terms?.origin!==old.terms?.origin||next.terms?.slot?.index!==(old.terms?.slot?.index??0)+1||
+     JSON.stringify(next.seed)!==JSON.stringify(old.seed)||old.outbox?.length)return false;
+  const certificate=Uint8Array.from(child.play_authorization);
+  if(certificate.length<=32)return false;
+  const authorized=JSON.parse(new TextDecoder().decode(certificate.subarray(0,-32)));
+  if(JSON.stringify(authorized.hand)!==JSON.stringify(parent.handoff.next))return false;
+  if(!await store.read('checkpoints',`defense/${id}`))return false;
+  const defense=JSON.parse(new TextDecoder().decode(await store.load(`defense/${id}`,id)));
+  // The whole-hand justice package replaces every move-specific defense only
+  // after the peer retirement secret has been registered durably.
+  if(defense.version!==1||defense.funding!==old.terms.origin||defense.revision!==parent.accepted.length*4+5||
+     defense.paths?.length!==2||defense.paths.some(path=>path.length)||defense.penalties?.length!==1||!defense.penalties[0].length)return false;
+  const retiredHeader={version:1,entered:parent.entered,peer_ready:parent.peer_ready,
+    entry_authorization:parent.entry_authorization,play_authorization:parent.play_authorization};
+  const compact={moduleHash:old.moduleHash,seed:old.seed,terms:old.terms,retiredTo:successor,retiredHeader,
+    preparationCompacted:true,cursor:old.cursor,outbox:[],deferred:[]};
+  const obsolete=(await store.checkpointIds()).filter(key=>typeof key==='string'&&key.startsWith(`${id}/`)&&/\/(artifact|journal)\/[a-f0-9]{64}$/.test(key));
+  // One transaction: on failure both full checkpoints survive. Leave the
+  // independent defense package and wallet keys byte-for-byte unchanged.
+  await store.saveBatch([{id,binding:id,plaintext:encode(compact)}],obsolete);
+  return true;
+}
+
 // Both entry acknowledgements prove both peers have saved the complete tree.
 // Before this barrier the bulk log is still required to resume verification.
 export function canCompactPreparationJournal(bytes) {

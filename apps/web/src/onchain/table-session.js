@@ -50,6 +50,20 @@ export async function tableApi(path, body, token) {
   return value;
 }
 const api=tableApi;
+// A reserve quote depends on the fixed opening topology, not player identities.
+// These public curve points are only for sizing; no funding is created here.
+export async function publicBuyInRequirement(wallet) {
+  const identities = ["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"]
+    .map(k => Array.from(unhex(k)));
+  const reserve = await wallet.rpc.call("reserve", {regtest:false, identities,
+    reveal_keys:identities.map(key=>Array.from({length:9},()=>key)),origin:`${"01".repeat(32)}:0`,origin_value:44550,
+    nonce:Array(32).fill(1),full:true,fee_multiplier:WALLET_FEE_RATE,csv:12,stacks:[20000,20000],button:0});
+  return buyInRequirement(reserve, 1);
+}
+function buyInRequirement(reserve, index, rate=WALLET_FEE_RATE) {
+  const fee=Math.ceil(255*rate);
+  return Math.ceil((40000+reserve+1000*rate)/2 + Math.floor(fee/2) + (index ? fee%2 : 0) + 330);
+}
 export class TableSession {
   constructor(config, render) {
     this.config = config;
@@ -86,6 +100,16 @@ export class TableSession {
       playerToken: this.data.playerToken,
       inviteSecret: this.data.inviteSecret,
     });
+    await this.save();
+    await this.open();
+  }
+  async joinMatched(assignment, name = savedPlayerName()) {
+    const id = `${assignment.gameId}-${assignment.sender}`;
+    if (await storage.read("checkpoints", id)) return this.resume(assignment.gameId, assignment.sender);
+    this.data = {gameId:assignment.gameId, sender:assignment.sender,
+      playerToken:assignment.playerToken, inviteSecret:assignment.inviteSecret,
+      protocol:"channel-v1", publicMatch:true, playerName:playerName(name),
+      cursor:0,peer:{},sent:{},outbox:[],log:[]};
     await this.save();
     await this.open();
   }
@@ -180,6 +204,7 @@ export class TableSession {
       previousGameId: this.data.previous?.gameId,
       dealGameId:this.data.dealGameId, candidateTerms:this.data.terms, speculative:!!this.data.bufferCandidate, deferredPayouts:!!this.data.deferredPayouts,
       deckOnly:!!this.data.bufferSlot,
+      workerLimit:this.recoveryWorkerLimit,
     },[relayPort]);
     this.localWallet=await walletReady;
     // Funding operations are stateless and the lobby already owns this worker.
@@ -624,7 +649,7 @@ export class TableSession {
     // Two Taproot inputs and three outputs: 255 virtual bytes when signed.
     const fee = Math.ceil(255 * plan.multiplier);
     const index = this.data.sender === "alice" ? 0 : 1;
-    const needed = value/2 + Math.floor(fee/2) + (index ? fee%2 : 0) + 330;
+    const needed = buyInRequirement(reserve,index,plan.multiplier);
     if (!this.data.peer.wallet) {this.stage="Waiting for your opponent’s wallet";return;}
     const sharedWallet=this.data.peer.wallet.script===this.localWallet.script;
     // One browser profile can host both seats. Let Alice choose first so Bob
@@ -708,14 +733,18 @@ export class TableSession {
     const peer = this.data.peer.leave;
     if (peer && (peer.hand !== settlement.hand || peer.node !== settlement.node)) throw new Error("Cashout settlement mismatch");
     this.data.leaveRequested = true;
-    this.stage = "Cashing out…";
+    // Select the current phase before notifying: polling must not briefly
+    // announce cashout while we still need the peer's agreement.
+    this.stage = !this.data.cashout && !peer
+      ? "Waiting for your opponent to cash out…"
+      : "Cashing out…";
     this.notify();
     await this.save();
     this.handBuffer?.close();
     this.nextSession?.close(); this.nextSession = null;
     if (!this.data.cashout) {
       await this.send("leave",settlement);
-      if (!peer) {this.stage="Waiting for your opponent to cash out…";return;}
+      if (!peer) return;
       const scripts = [];
       scripts[this.view.role] = Array.from(unhex(this.localWallet.script));
       scripts[1-this.view.role] = Array.from(unhex(this.data.peer.wallet.script));
@@ -1029,8 +1058,10 @@ export class TableSession {
         this.pollFailures=(this.pollFailures??0)+1;
         this.pollRetryAt=Date.now()+Math.min(30000,(/429/.test(e.message)?2000:500)*2**Math.min(this.pollFailures,5));
         this.error = e.message;
-        if(/^(Relay (connection interrupted|response timed out|worker timed out)|(?:Preparation|Channel commitment|Launch preparation) exchange timed out|Failed to fetch)$/.test(e.message))this.reconnectRequired=true;
-        this.pollPaused = !/fetch|network|connection|timed? ?out|timeout|HTTP|Relay [45]/i.test(e.message);
+        const crashedWorker=/^Worker failed: /.test(e.message);
+        if(crashedWorker)this.recoveryWorkerLimit=1;
+        if(crashedWorker || /^(Relay (connection interrupted|response timed out|worker timed out)|(?:Preparation|Channel commitment|Launch preparation) exchange timed out|Failed to fetch)$/.test(e.message))this.reconnectRequired=true;
+        this.pollPaused = crashedWorker ? this.pollFailures>=3 : !/fetch|network|connection|timed? ?out|timeout|HTTP|Relay [45]/i.test(e.message);
         this.stage = !this.pollPaused
           ? "Connection paused — retrying"
           : this.data.leaveRequested ? "Cashout paused" : "Table paused";

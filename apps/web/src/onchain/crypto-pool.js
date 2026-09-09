@@ -1,4 +1,15 @@
 import { Rpc } from "./wasm-client.js";
+
+// Two owner variants run together. Budget their combined worker count, leaving
+// cores for the coordinator/UI and limiting duplicated private Wasm inventories.
+export function cryptoWorkersPerOwner({cores=globalThis.navigator?.hardwareConcurrency,memory=globalThis.navigator?.deviceMemory,background=false,full=true}={}) {
+  if(!full)return 1;
+  cores=Number.isFinite(cores)&&cores>=1?Math.floor(cores):4;
+  const memoryCap=memory>0&&memory<=2?2:memory>0&&memory<=4?6:16;
+  const available=Math.min(memoryCap,Math.max(2,cores-2));
+  const budget=background?Math.max(2,Math.floor(available/2)):available;
+  return Math.max(1,Math.floor(budget/2));
+}
 /** Local-role workers share a bounded execution queue; verification runs first. */
 export class CryptoPool {
   constructor(count) {

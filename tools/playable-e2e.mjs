@@ -1,13 +1,32 @@
 // Explicitly funded UI qualification: independent wallets, auto redeal, cashout.
 import {createRequire} from 'node:module';
 import * as fs from 'node:fs/promises';
+import {startWorkerFailureProxy} from './worker-failure-proxy.mjs';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE??'playwright');
 const option=(name,fallback)=>process.argv.find(a=>a.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
 if(!process.argv.includes('--funded'))throw Error('Pass --funded to authorize this wallet-funded integration test');
-const origin=option('origin','https://poker.bitvm.org'),dir=option('output','/private/tmp/poker-playable-e2e');
+let origin=option('origin','https://poker.bitvm.org');
+const dir=option('output','/private/tmp/poker-playable-e2e');
 const handCount=Number(option('hands','3'));
 const resume=process.argv.includes('--resume');
 const delayHandoff=process.argv.includes('--delay-handoff');
+const reconnectEntry=process.argv.includes('--reconnect-entry');
+const crashConstruction=process.argv.includes('--crash-construction');
+let crashProxy;
+if(crashConstruction) {
+ const injection=`
+const constructNormally=self.onmessage;
+self.onmessage=async event=>{
+ const count=await navigator.locks.request('construction-crash-test',async()=>{
+  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('poker-construction-crash-test',1);r.onupgradeneeded=()=>r.result.createObjectStore('counter');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  try{return await new Promise((resolve,reject)=>{let n;const tx=db.transaction('counter','readwrite'),s=tx.objectStore('counter'),r=s.get('count');r.onsuccess=()=>{n=(r.result??0)+1;s.put(n,'count');};tx.oncomplete=()=>resolve(n);tx.onabort=()=>reject(tx.error);});}finally{db.close();}
+ });
+ if(count===3){setTimeout(()=>{throw Error('Injected construction startup failure');},0);return;}
+ return constructNormally(event);
+};`;
+ const port=resume?Number(new URL(JSON.parse(await fs.readFile(dir+'/report.json','utf8')).urls[0]).port):0;
+ crashProxy=await startWorkerFailureProxy(origin,injection,port);origin=crashProxy.origin;
+}
 if(!Number.isInteger(handCount)||handCount<1||handCount>5)throw Error('Expected 1–5 hands');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{
@@ -31,7 +50,7 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
   await Promise.all(pages.map(async(p,i)=>{
    p.on('pageerror',e=>report.errors.push({i,error:e.message}));
    p.on('console',m=>{if(m.text().startsWith('[poker ')&&report.diagnostics.length<12000)report.diagnostics.push({i,line:m.text()});});
-   await p.goto(origin);await p.evaluate(async({delayHandoff})=>{
+   await p.goto(origin);await p.evaluate(async({delayHandoff,reconnectEntry})=>{
     const {TableSession}=await import(`${document.documentElement.dataset.assetBase??''}/src/onchain/table-session.js`);
     const notify=TableSession.prototype.notify,publish=TableSession.prototype.publish;
     window.publications=[];
@@ -52,8 +71,34 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
         return call.call(this,method,...args);
       };
     }
+    if(reconnectEntry) {
+      const {Rpc,channelWorker}=await import(`${document.documentElement.dataset.assetBase??''}/src/onchain/wasm-client.js`);
+      const {createRelayPort}=await import(`${document.documentElement.dataset.assetBase??''}/src/onchain/relay-socket.js`);
+      const call=Rpc.prototype.call;
+      Rpc.prototype.call=async function(method,args={},transfer=[]) {
+        if(method==='init')this.entryTestInit={...args};
+        const result=await call.call(this,method,args,transfer);
+        if(method==='authorizeEntry'&&!window.entryReconnects) {
+          const child=[...(window.table?.handBuffer?.sessions.values()??[])].find(c=>c.player===this);
+          if(!child)throw Error('Selected candidate missing from test buffer');
+          const params=this.entryTestInit;window.entryReconnects=0;
+          // Restart the selected worker before receiving peer Entry. Repeated
+          // restore used to register an empty revision-1 package that conflicted
+          // with the launch paths added by the subsequent entry exchange.
+          for(let n=0;n<2;n++) {
+            child.player.close();child.player=channelWorker();
+            child.player.diagnostics={...this.diagnostics};
+            child.player.onprogress=progress=>{child.progress=progress;child.notify();};
+            const relayPort=createRelayPort();
+            await child.player.call('init',{...params,relayPort},[relayPort]);
+            window.entryReconnects++;
+          }
+        }
+        return result;
+      };
+    }
     const {localWallet}=await import(`${document.documentElement.dataset.assetBase??''}/src/onchain/local-wallet.js`);window.testWallet=await localWallet(await(await fetch('/api/v1/config')).json());
-   },{delayHandoff});
+   },{delayHandoff,reconnectEntry});
   }));
   report.wallets=await Promise.all(pages.map(p=>p.evaluate(async()=>({address:testWallet.address,balance:(await testWallet.refresh()).filter(c=>c.status.confirmed).reduce((n,c)=>n+c.value,0)}))));
   console.log(JSON.stringify({wallets:report.wallets}));await save();
@@ -130,12 +175,36 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
   report.broadcasts=await Promise.all(pages.map(p=>p.evaluate(()=>publications)));
   if(report.hands.length!==handCount)throw Error('Missing automatic hands');
   if(report.errors.length)throw Error('Browser errors during playable test');
+  if(process.argv.includes('--verify-retired-storage')) {
+    report.retiredStorage=await Promise.all(pages.map(p=>p.evaluate(async()=>{
+      const base=document.documentElement.dataset.assetBase??'';
+      const {PreparationCheckpointStore}=await import(`${base}/src/storage/preparation-checkpoint-store.js`),{decodeBinary}=await import(`${base}/src/onchain/binary-codec.js`);
+      const store=new PreparationCheckpointStore(`poker-channel-player-${table.data.sender}`),ids=await store.checkpointIds();let retired=0,bytes=0;
+      for(const id of ids){const row=await store.read('checkpoints',id);if(!row)continue;bytes+=row.ciphertext.byteLength;if(!/^[a-f0-9]{64}$/.test(id))continue;
+        const record=decodeBinary(await store.load(id,id));if(!record.retiredTo)continue;retired++;
+        if((await store.checkpointIds()).some(key=>typeof key==='string'&&key.startsWith(`${id}/`)&&/\/(artifact|journal)\//.test(key)))throw Error('Retired hand retained bulk checkpoints');
+        const defense=JSON.parse(new TextDecoder().decode(await store.load(`defense/${id}`,id)));
+        if(defense.paths.some(path=>path.length)||defense.penalties.length!==1)throw Error('Retired hand lost its whole-hand defense');
+      }
+      return {retired,bytes};
+    })));
+    if(report.retiredStorage.some(s=>s.retired<handCount-1))throw Error('Retired hands were not compacted during play');
+  }
   if(delayHandoff) {
     report.delayedHandoff={injected:await Promise.all(pages.map(p=>p.evaluate(()=>!!window.handoffDelayInjected))),
       deferredFrames:report.diagnostics.filter(d=>d.line.includes('"event":"channel.frame.deferred"')).length};
     if(!report.delayedHandoff.injected.some(Boolean)||!report.delayedHandoff.deferredFrames)throw Error('Did not exercise early next-hand delivery');
   }
+  if(reconnectEntry) {
+    report.entryReconnects=await Promise.all(pages.map(p=>p.evaluate(()=>window.entryReconnects??0)));
+    if(!report.entryReconnects.every(n=>n===2))throw Error('Did not restart both entry workers twice');
+  }
+  if(crashConstruction) {
+    const injectedConstructionCrash=report.diagnostics.some(d=>d.line.includes('Injected construction startup failure'));
+    report.constructionCrash={injected:injectedConstructionCrash,recovered:report.hands.length>=2};
+    if(!injectedConstructionCrash||report.hands.length<2)throw Error('Did not recover an interrupted background construction');
+  }
   report.status='PASS';report.totalMs=Date.now()-started;await save();console.log(JSON.stringify({status:report.status,setupMs:report.setupMs,hands:report.hands,totalMs:report.totalMs,errors:report.errors}));
  }catch(e){report.status='FAIL';report.error=e.stack;await save();console.error(e);process.exitCode=1;}
  finally{await Promise.all(contexts.map(c=>c.close()));}
-})();
+})().finally(()=>crashProxy?.close());

@@ -98,6 +98,7 @@ export function idleFeedback({ data, view, stage, progress, busyAction, hasFundi
 }
 
 export function playerError(message, inGame = true) {
+  if (/^Worker app file unavailable|^Worker failed:/.test(message)) return "A required app worker couldn’t start. Reload this tab and reconnect.";
   if (/Wasm (artifact|manifest) (request failed|failed manifest verification|Content-Length)/i.test(message)) return "A required app file couldn’t load. Reload this tab and reconnect.";
   if (/QuotaExceeded|quota.*exceed/i.test(message)) return "Browser storage is full. Free up disk space, then reconnect.";
   if (/Player already active|seat is open in another tab/i.test(message)) return "This seat is open in another tab. Close that tab, then reconnect here.";
@@ -117,8 +118,13 @@ export function tableActivity({data, view, submission, error}) {
   if (error || data.left || data.leaveRequested || data.walletNeeded) return activity;
   const pending = !!(submission || view?.pendingMove || view?.pending || data.pending);
   if (view?.betting && !view.terminal) {
-    activity.local = pending;
-    activity.opponent = !!view.pendingMove && !submission;
+    // A pending move belongs to the current actor on both peers. Signing and
+    // acknowledging that same move must not make both seats appear active.
+    if (pending && (view.actor === 0 || view.actor === 1)) {
+      activity[view.actor === view.role ? "local" : "opponent"] = true;
+    } else if (submission) {
+      activity.local = true;
+    }
     return activity;
   }
   if (view?.terminal) return activity;

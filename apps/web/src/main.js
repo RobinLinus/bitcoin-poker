@@ -10,14 +10,17 @@ if (!document.body.classList.contains("nickname-onboarding") && !/^#\/(table|hos
   document.getElementById("wallet-panel").open = true;
 }
 // Show the saved-table state before configuration or application modules load.
-const reconnecting = /^#\/table\/[a-f0-9]{64}\/(alice|bob)$/.test(location.hash);
+const matching = location.hash === "#/match";
+const reconnecting = matching || /^#\/table\/[a-f0-9]{64}\/(alice|bob)$/.test(location.hash);
 if (reconnecting) {
+  document.body.classList.remove("wallet-onboarding","wallet-checking","entry-pending");
+  document.querySelector(".poker-table").classList.add("cards-not-dealt");
   document.body.classList.add("onchain-table");
   document.getElementById("lobby").classList.add("hidden");
   document.getElementById("game").classList.remove("hidden");
   document.getElementById("invite-card").classList.add("hidden");
   document.getElementById("table-message").classList.add("hidden");
-  document.getElementById("preparation-title").textContent = "Reconnecting…";
+  document.getElementById("preparation-title").textContent = matching ? "Finding an opponent…" : "Reconnecting…";
   document.getElementById("preparation-progress").removeAttribute("value");
   document.getElementById("preparation-progress").setAttribute("aria-label", "Reconnecting");
   document.getElementById("table-preparation").classList.remove("hidden");
@@ -32,6 +35,8 @@ if (config.mode === "onchainTest") {
   await import("./onchain/table-controller.js");
 }
 else {
+  document.getElementById("play-now").classList.add("hidden");
+  document.getElementById("create-game").disabled=false;
   document.querySelector("#stakes-row strong").textContent = "Practice chips";
   document.getElementById("mode-copy").textContent =
     "Demo only — no real money is used.";

@@ -3,10 +3,10 @@ import {encodeBinary,decodeBinary,encodeProtocol,decodeProtocol} from './binary-
 import {preparationBatches,packPreparation,unpackPreparation} from './preparation-wire.js';
 import {setRelayPort,relayConnection} from './relay-socket.js';
 import { BrowserDefense } from "./browser-defense.js";
-import { compactChannelPreparation, canCompactPreparationJournal, warmChannelTransport, receiveChannelMessages as receiveRelayMessages, sendChannelMessages as sendRelayMessages } from "./channel-inbox.js";
+import { compactRetiredChannel, compactChannelPreparation, canCompactPreparationJournal, warmChannelTransport, receiveChannelMessages as receiveRelayMessages, sendChannelMessages as sendRelayMessages } from "./channel-inbox.js";
 import { client, moduleBytes, encode, decode, hex, acquirePlayerLock, Rpc } from "./wasm-client.js";
 import { advanceDealerRetry } from './dealer-progress.js';
-import { CryptoPool } from "./crypto-pool.js";
+import { CryptoPool, cryptoWorkersPerOwner } from "./crypto-pool.js";
 import { PreparationCheckpointStore } from "../storage/preparation-checkpoint-store.js";
 let engine, wasm, module, seed, room, terms, record, store;
 let preparationMetrics, defense, prioritizingEntry=false;
@@ -16,8 +16,7 @@ let warmConstruction=[],warmPools=[];
 // Reserve only this channel seat. Unrelated tables and the opposite seat must
 // remain able to sign while this hand waits for its peer's payout exchange.
 const payoutPriority=()=>`poker-payout-cpu/${terms.slot ? hex(terms.slot.channel) : room.gameId}/${room.sender}`;
-const workerCount=()=>terms.full ? Math.min(room.speculative && !record.payoutBinding ? 2 : 4,
-  Math.max(1,Math.floor(((navigator.hardwareConcurrency||4)-2)/2))) : 1;
+const workerCount=()=>Math.min(room.workerLimit??Infinity,cryptoWorkersPerOwner({full:terms.full,background:!!room.speculative&&!record.payoutBinding}));
 function warmPreparationWorkers() {
   // Buffered decks are forked into a different candidate worker. They never
   // construct or sign a tree themselves, so warming pools here only leaks idle
@@ -228,9 +227,10 @@ async function prepare() {
   // participates in signing or message routing after commitment construction.
   owner=0;
   const contexts = [null, null];
-  // Reserve capacity for the table UI and its background deal; cap private
-  // inventory copies at eight workers per player on larger machines.
+  // Scale both owner pools together to the browser's available CPU and memory.
   const workersPerOwner = workerCount();
+  trace('channel.crypto.budget',{gameId:room.gameId,sender:room.sender,cores:navigator.hardwareConcurrency,
+    memoryGiB:navigator.deviceMemory,workersPerOwner,totalWorkers:2*workersPerOwner,background:!!room.speculative&&!record.payoutBinding});
   const pools = [];
   const signingTasks = [];
   let failure;
@@ -416,11 +416,19 @@ async function command(method,args) {
       room=args;void warmChannelTransport(room).catch(()=>{});store=new PreparationCheckpointStore(`poker-channel-player-${room.sender}`);
       defense=new BrowserDefense(room.config,store);
       releaseLock = await acquirePlayerLock(`poker-channel/${room.gameId}/${room.sender}`);
+      const tables=new PreparationCheckpointStore('poker-playable-table');
       // Clean abandoned snapshots from inactive hands as well as this seat.
       for (const id of await store.checkpointIds()) {
         if (typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) continue;
         const clean=async()=>{
           await store.pruneSnapshots(id);
+          const tableId=`${id}-${room.sender}`;
+          if(await tables.read('checkpoints',tableId)) {
+            const table=decodeBinary(await tables.load(tableId,'table-v1'));
+            if(table.successor && await compactRetiredChannel({gameId:id,sender:room.sender},table.successor,store)) {
+              trace('channel.retired.compacted',{gameId:id,sender:room.sender});return;
+            }
+          }
           const saved=decodeBinary(await store.load(id,id));
           if(saved.journal && !saved.preparationCompacted) {
             const journal=await store.load(`${id}/journal/${saved.journal}`,id);
@@ -437,6 +445,7 @@ async function command(method,args) {
       }
       const existing=await store.read("checkpoints",room.gameId);
       if(existing) record=decodeBinary(await store.load(room.gameId,room.gameId));
+      if(record?.retiredTo)throw new Error('Hand retired; reconnect to the current table');
       const compiled=room.engine ?? await (async()=>{
         const raw=await moduleBytes();return {module:await WebAssembly.compile(raw),digest:await hash(raw)};
       })();
@@ -490,6 +499,13 @@ async function command(method,args) {
       terms=args;record.terms=args;cachedView=null;journalDirty=true;engine.call(60,encode({seed:Array.from(seed),terms,contest_blocks:6}));await persist();return;
     case "deal": return deal();
     case "futureTerms": return decode(engine.call(90,encode(args)));
+    case "compactRetired": {
+      if(!publicView().handoffComplete)return false;
+      await persist();
+      const compacted=await compactRetiredChannel(room,args.successor,store);
+      if(compacted){halted=true;fatalError='Hand retired; reconnect to the current table';trace('channel.retired.compacted',{gameId:room.gameId,sender:room.sender});}
+      return compacted;
+    }
     case "bindPayouts": return navigator.locks.request(payoutPriority(),async()=>{
       // Finish this candidate's last internal frames before pausing bulk lanes.
       await flush();

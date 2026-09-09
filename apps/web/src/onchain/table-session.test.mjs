@@ -681,7 +681,7 @@ test('separate wallets still select their buy-ins in parallel',async()=>{
 });
 
 test('interrupted preparation reopens its durable worker before retrying',async t=>{
- for(const reason of ['Relay connection interrupted','Preparation exchange timed out']) {
+ for(const reason of ['Relay connection interrupted','Preparation exchange timed out','Worker failed: construction-worker.js: Worker could not start']) {
   const s=new TableSession({},()=>{});s.data={gameId:'test',sender:'alice'};
   let polls=0,closed=0,opened=0;
   s.player={close(){closed++}};
@@ -689,10 +689,21 @@ test('interrupted preparation reopens its durable worker before retrying',async 
   s.openPlayer=async()=>{opened++;};
   t.after(()=>{clearInterval(s.timer);clearTimeout(s.protocolTimer)});
   await s.step();assert.equal(s.reconnectRequired,true);assert.equal(opened,0);
+  if(reason.startsWith('Worker failed:'))assert.equal(s.recoveryWorkerLimit,1);
   s.pollRetryAt=0;await s.step();
   assert.equal(closed,1);assert.equal(opened,1);assert.equal(polls,2);
   assert.equal(s.error,null);assert.equal(s.reconnectRequired,false);
  }
+});
+
+test('repeated worker crashes stop after bounded retries without deleting the checkpoint',async t=>{
+ const s=new TableSession({},()=>{});s.data={gameId:'test',sender:'alice'};
+ let opened=0;s.player={close(){}};s.openPlayer=async()=>{opened++};
+ s.tick=async()=>{throw Error('Worker failed: construction-worker.js: unavailable')};
+ t.after(()=>clearInterval(s.timer));
+ for(let i=0;i<4;i++){s.pollRetryAt=0;await s.step();}
+ assert.equal(opened,2);assert.equal(s.pollPaused,true);assert.equal(s.stage,'Table paused');
+ assert.equal(s.data.gameId,'test');
 });
 
 test('a verification failure is not retried by replacing its worker',async()=>{
@@ -708,4 +719,23 @@ test('selected future hand progresses entry promptly without activating unused c
  const s=new TableSession({},()=>{});s.background=true;s.data={entrySelected:true,peer:{}};
  s.view={betting:false,terminal:false};s.tick=async()=>{};
  try {await s.step();assert.ok(s.protocolTimer);} finally {s.close();}
+});
+
+
+test("cashout polling keeps the waiting label stable until the peer agrees", async () => {
+  const frames=[];
+  const s=new TableSession({},state=>frames.push(state.stage));
+  s.data={peer:{wallet:{script:"bb"}}};
+  s.view={terminal:true,hand:"hand",node:"end",role:0};
+  s.save=async()=>{};s.send=async()=>{s.notify();};
+  for(let i=0;i<3;i++){await s.cashOut();s.notify();}
+  assert.ok(frames.length>=6);
+  assert.ok(frames.every(stage=>stage==="Waiting for your opponent to cash out…"));
+  s.data.peer.leave={hand:"hand",node:"end"};
+  s.localWallet={script:"aa"};
+  s.player={call:async()=>({...s.view,cashout:null})};
+  frames.length=0;
+  await s.cashOut();
+  assert.ok(frames.length>0);
+  assert.ok(frames.every(stage=>stage==="Cashing out…"));
 });

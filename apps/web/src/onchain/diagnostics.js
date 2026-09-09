@@ -1,6 +1,6 @@
 // Public protocol metadata only. Never pass payloads, keys, witnesses or views here.
 const history=[],states=new Map();
-const allowed=new Set('gameId sender background worker method stage phase percent node actor pending terminal ready active slots queued kind messages bytes received joined epoch subscribed revision durationMs operation error'.split(' '));
+const allowed=new Set('gameId sender background worker method stage phase percent node actor pending terminal ready active slots queued kind messages bytes received joined epoch subscribed revision durationMs operation error cores memoryGiB workersPerOwner totalWorkers compacted'.split(' '));
 let sequence=0;
 const scrub=value=>String(value).split('\n')[0].replace(/[A-Za-z0-9+/_=-]{40,}/g,'[redacted]').replace(/\[(?:\s*\d+\s*,){8,}[^\]]*\]/g,'[redacted]').slice(0,300);
 function clean(fields) {
@@ -32,7 +32,7 @@ export function traceOperation(event,fields={},quiet=false) {
   return error=>{
     if(ended)return;ended=true;clearInterval(timer);
     const durationMs=Math.round(performance.now()-start);
-    if(error||!quiet||waiting||durationMs>=1000)trace(`${event}.${error?'error':'done'}`,{...data,durationMs,...(error?{error:error.message??error}:{})});
+    if(error||!quiet||waiting||durationMs>=1000)trace(`${event}.${error?'error':'done'}`,{...data,durationMs,...(error?{error:error.message||error.name||String(error)}:{})});
   };
 }
 export const pokerLog=()=>history.join('\n');

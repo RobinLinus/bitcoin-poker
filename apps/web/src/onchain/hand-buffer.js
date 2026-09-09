@@ -7,6 +7,7 @@ import {encode,decode,hex,unhex} from './wasm-client.js';
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const hash=async value=>hex(new Uint8Array(await crypto.subtle.digest('SHA-256',encode(value))));
 const pairKey=pair=>pair.join(':');
+const retrying=child=>!!child.error && child.pollPaused===false;
 export function validateBufferPlan(plan,index) {
   if(!Array.isArray(plan.slots)||plan.slots.length>3||!Array.isArray(plan.jobs)||plan.jobs.length>8) throw new Error('Invalid hand buffer plan');
   const ids=new Set();
@@ -160,11 +161,13 @@ export class HandBuffer {
     if(!job) {await this.evict();return;}
     if(nearestOnly && job.index>index+1)return;
     const slot=s.slots.find(slot=>slot.index===job.index),deck=this.sessions.get(slot.gameId);
+    if(retrying(deck))return;
     if(deck.error) throw new Error(deck.error);
     if(!deck.data.deckReady) return;
     const terms=await t.player.call('futureTerms',{index:job.index,anchor:Array.from(unhex(slot.gameId)),stacks:job.stacks});
     const candidate=await this.open(job.id,await hash(['candidate-invite',slot.inviteSecret,job.id]),terms,{bufferCandidate:true,deferredPayouts:!!job.deferredPayouts,dealGameId:slot.gameId});
     // open() starts its own serial polling loop. Do not occupy the table poll.
+    if(retrying(candidate))return;
     if(candidate.error) throw new Error(candidate.error);
     if(candidate.data.prepared && candidate.data.peer.ready) {
       if(!s.done.includes(job.id)) s.done.push(job.id);
@@ -210,6 +213,7 @@ export class HandBuffer {
       const terms=await this.table.player.call('futureTerms',{index,anchor:Array.from(unhex(slot.gameId)),stacks:job.stacks});
       child=await this.open(job.id,await hash(['candidate-invite',slot.inviteSecret,job.id]),terms,{bufferCandidate:true,deferredPayouts:!!job.deferredPayouts,dealGameId:slot.gameId});
     }
+    if(retrying(child??{}))return null;
     if(!child?.data.prepared || !child.data.peer.ready) return null;
     if(child.error)throw new Error(child.error);
     if(job.deferredPayouts) {

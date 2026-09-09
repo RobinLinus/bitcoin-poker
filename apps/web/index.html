@@ -48,7 +48,7 @@
         <div class="hero-copy">
           <h1>Heads-up poker.</h1>
           <p class="hero-body">
-            Invite a friend to a private game of Texas hold’em.
+            Play heads-up Texas hold’em.
           </p>
         </div>
 
@@ -57,22 +57,21 @@
             <div class="entry-intro">
               <span class="card-glyph" aria-hidden="true">A♠</span>
               <div>
-                <h2>Start a game</h2>
-                <p>You’ll get a private link for your opponent.</p>
+                <h2>Take a seat</h2>
+                <p>Play against a new opponent or invite a friend.</p>
               </div>
             </div>
             <div class="terms-preview">
               <div><span>Game</span><strong>Fixed-limit hold’em</strong></div>
               <div id="stakes-row"><span>Stakes</span><strong>₿20,000 each</strong></div>
             </div>
-            <button id="create-game" class="primary-button" type="button">
-              Create table
-              <span aria-hidden="true">→</span>
-            </button>
-            <p id="mode-copy" class="fine-print">each player funds their buy-in from their wallet.</p>
+            <button id="play-now" class="primary-button" type="button" disabled>Play now</button>
+            <button id="create-game" class="private-table-button" type="button" disabled>Create private table</button>
+            <p id="mode-copy" class="fine-print">Each player funds their buy-in from their wallet.</p>
           </div>
 
           <p id="lobby-error" class="error-message hidden" role="alert"></p>
+          <button id="cancel-match-lobby" class="private-table-button hidden" type="button">Cancel matchmaking</button>
           <button id="join-retry" class="primary-button hidden" type="button">Try again</button>
           <details id="lobby-error-details" class="hidden"><summary>Error details</summary><pre id="lobby-error-technical"></pre></details>
         </div>
@@ -92,6 +91,7 @@
               <section id="table-preparation" class="table-preparation hidden" aria-labelledby="preparation-title">
                 <h2 id="preparation-title">Getting the table ready…</h2>
                 <progress class="progress-indicator" id="preparation-progress" max="100" aria-label="Table preparation"></progress>
+                <button id="cancel-match" class="private-table-button hidden" type="button">Cancel</button>
               </section>
 
               <div id="opponent-bet" class="table-bet table-bet-opponent hidden" role="status">

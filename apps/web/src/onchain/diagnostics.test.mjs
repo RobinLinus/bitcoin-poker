@@ -21,3 +21,8 @@ test('pending operations report waits and stop their timer on failure',()=>{
  globalThis.setInterval=callback=>{tick=callback;return 1};globalThis.clearInterval=()=>{cleared=true};console.info=line=>lines.push(line);
  try {const end=traceOperation('network',{},true);assert.equal(lines.length,0);tick();assert.match(lines[0],/network.waiting/);end(Error('offline'));assert.equal(cleared,true);assert.match(lines[1],/network.error/);}finally{globalThis.setInterval=interval;globalThis.clearInterval=clear;console.info=info;}
 });
+test('storage exceptions with empty messages retain their error name',()=>{
+ const info=console.info,lines=[];console.info=line=>lines.push(line);
+ try {traceOperation('storage',{},true)(new DOMException('','QuotaExceededError'));assert.match(lines[0],/"error":"QuotaExceededError"/);}
+ finally {console.info=info;}
+});

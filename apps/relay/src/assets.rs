@@ -284,6 +284,7 @@ pub(super) async fn onchain_asset(
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> axum::response::Response {
     let (mime, source) = match name.as_str() {
+        "matchmaking.js" => ("text/javascript", include_str!("../../web/src/onchain/matchmaking.js")),
         "table-controller.js" => (
             "text/javascript",
             include_str!("../../web/src/onchain/table-controller.js"),

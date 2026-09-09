@@ -1,3 +1,5 @@
+import { Matchmaking, walletMatchId, pendingMatch, forgetMatch, activePublicTable, rememberPublicTable, clearPublicTable } from "./matchmaking.js";
+import { publicBuyInRequirement } from "./table-session.js";
 import { localWallet } from "./local-wallet.js";
 import { appUpdateAvailable } from "../wasm/loader.js";
 import { renderCard, highlightTurn, animateChips, renderChipStack, renderPlayerNames, playerName, savedPlayerName } from "../practice/render-table.js";
@@ -79,11 +81,16 @@ function outcome(view) {
       : "Opponent timed out — you win";
   return "Hand complete";
 }
+const dismissedSessions = new WeakSet();
 function render(state) {
+  if (state.activeSession && dismissedSessions.has(state.activeSession)) return;
   session = state.activeSession ?? session;
   last = state;
   const { data, view, error, busy, busyAction } = state;
   if (!data) return;
+  // left is set only after the payout is confirmed.
+  if (data.left) { returnToLobby(); return; }
+  document.body.classList.remove("matchmaking");
   renderNextHandTransition(state);
   $("table-message").classList.toggle("cashout-status", !!data.leaveRequested && !data.left);
   document.querySelector(".poker-table").classList.toggle("cards-collected", !!(data.leaveRequested || data.cashout || view?.cashoutStarted || data.left));
@@ -106,7 +113,7 @@ function render(state) {
   $("table-small-blind").textContent = formatBitcoinAmount(100);
   $("table-big-blind").textContent = formatBitcoinAmount(200);
   $("share-link").value = inviteUrl(data.gameId, data.inviteSecret);
-  visible("invite-card", data.sender === "alice" && !data.peer.keys && !data.peer.profile);
+  visible("invite-card", !data.publicMatch && data.sender === "alice" && !data.peer.keys && !data.peer.profile);
   if (state.walletBalance !== undefined) $("wallet-balance").textContent = formatBitcoinAmount(state.walletBalance);
   if (data.walletNeeded) {
     if (!walletPromptShown) $("wallet-panel").open = true;
@@ -227,15 +234,11 @@ function render(state) {
   }
   const canLeave = !!view?.terminal && !!data.sitOutNext && !data.wantsNext && !data.handoffStarted && !data.left && !data.leaveRequested;
   visible("leave-table", canLeave);
-  visible("action-bar", canLeave || !!data.left || canPlay && actions.some(a => /^Action\((Fold|Check|Call|Bet|Raise)\)$/.test(a.kind)));
+  visible("action-bar", canLeave || canPlay && actions.some(a => /^Action\((Fold|Check|Call|Bet|Raise)\)$/.test(a.kind)));
   $("sit-out-next-hand").checked = !!data.sitOutNext;
   $("sit-out-next-hand").disabled = !!(data.successor || data.leaveRequested || data.peer.leave || data.cashout || data.left || (data.protocol==='channel-v1' && data.wantsNext));
-  visible("back-to-lobby", !!data.left);
-  if (data.left) {
-    visible("table-message", false);
-    $("table-phase").textContent = "";
-    $("table-detail").textContent = "";
-  } else if (data.leaveRequested) { $("table-phase").textContent = state.stage; $("table-detail").textContent = ""; }
+  visible("back-to-lobby", false);
+  if (data.leaveRequested) { $("table-phase").textContent = state.stage; $("table-detail").textContent = ""; }
   if (view?.nextStacks?.some((n) => n < 200))
     $("table-detail").textContent = "Not enough chips for another hand.";
   visible("table-detail", !!$("table-detail").textContent);
@@ -263,17 +266,17 @@ async function start(operation, kind = "create") {
   if (starting) return;
   if (kind !== "resume" && (!nickname() || document.body.classList.contains("nickname-onboarding") || !walletBalanceKnown || !(wallet?.balance > 0))) { updateWalletEntry(); return; }
   starting = true;
-  const button = $(kind === "resume" ? "resume-connection" : kind === "join" ? "join-retry" : "create-game");
-  const label = kind === "resume" ? "Reconnect" : kind === "join" ? "Join table" : "Create table";
-  button.textContent = kind === "resume" ? "Reconnecting…" : kind === "join" ? "Joining…" : "Creating…";
+  const button = $(kind === "match" ? "play-now" : kind === "resume" ? "resume-connection" : kind === "join" ? "join-retry" : "create-game");
+  const label = kind === "match" ? "Play now" : kind === "resume" ? "Reconnect" : kind === "join" ? "Join table" : "Create private table";
+  button.textContent = kind === "match" ? "Finding an opponent…" : kind === "resume" ? "Reconnecting…" : kind === "join" ? "Joining…" : "Creating…";
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
-  if (kind === "resume" || kind === "join") {
+  if (kind === "resume" || kind === "join" || kind === "match") {
     document.body.classList.remove("wallet-onboarding");
     visible("lobby", false);
     visible("game", true);
     visible("invite-card", false);
-    $("preparation-title").textContent = kind === "resume" ? "Reconnecting…" : "Joining table…";
+    $("preparation-title").textContent = kind === "match" ? "Finding an opponent…" : kind === "resume" ? "Reconnecting…" : "Joining table…";
     $("preparation-progress").removeAttribute("value");
     $("preparation-progress").setAttribute("aria-label", kind === "resume" ? "Reconnecting" : "Joining table");
     visible("table-preparation", true);
@@ -283,9 +286,10 @@ async function start(operation, kind = "create") {
     visible("table-message", false);
   }
   visible("join-retry", false);
+  visible("cancel-match-lobby", false);
   visible("lobby-error", false);
   visible("lobby-error-details", false);
-  $("create-game").disabled = $("join-retry").disabled = true;
+  $("play-now").disabled = $("create-game").disabled = $("join-retry").disabled = true;
   try {
     if (kind === "resume" && await appUpdateAvailable()) {
       session?.close();
@@ -296,7 +300,8 @@ async function start(operation, kind = "create") {
     session = new TableSession(config, render);
     await operation(session);
   } catch (e) {
-    if (kind === "join") {
+    if (kind === "join" || kind === "match") {
+      visible("cancel-match", false);
       document.body.classList.remove("entry-pending");
       visible("table-preparation", false);
       visible("game", false);
@@ -311,7 +316,8 @@ async function start(operation, kind = "create") {
     }
     visible("join-retry", kind === "join");
     visible("lobby-error", true);
-    $("lobby-error").textContent = playerError(e.message, false);
+    $("lobby-error").textContent = kind === "match" ? e.message : playerError(e.message, false);
+    visible("cancel-match-lobby", kind === "match" && pendingMatch());
     $("lobby-error-technical").textContent = e.message;
     visible("lobby-error-details", true);
     $("game-error-detail").textContent = e.message;
@@ -328,6 +334,78 @@ async function start(operation, kind = "create") {
     if (kind === "resume") $("table-phase").classList.remove("busy");
   }
 }
+let matchmaker = null, matchAttempt = false, autoMatchAttempt = false;
+function matchingScreen(status="Finding an opponent…") {
+  document.body.classList.add("matchmaking");
+  document.body.classList.remove("entry-pending","wallet-onboarding");
+  visible("lobby",false);visible("game",true);visible("invite-card",false);
+  visible("table-message",false);visible("action-bar",false);
+  nextHandLabel.classList.add("hidden");
+  document.querySelector(".poker-table").classList.add("cards-not-dealt");
+  document.querySelectorAll(".avatar").forEach(e=>e.classList.remove("processing"));
+  renderPlayerNames(nickname(), "Opponent");
+  $("local-stack").textContent=formatBitcoinAmount(20000);
+  $("opponent-stack").textContent="";
+  $("preparation-title").textContent=status;
+  $("preparation-progress").removeAttribute("value");
+  $("preparation-progress").setAttribute("aria-label",status);
+  visible("preparation-progress",true);visible("table-preparation",true);
+  visible("cancel-match",true);
+  $("cancel-match").disabled=false;
+  window.scrollTo({top:0,left:0,behavior:"instant"});
+}
+async function playNow(retry=false) {
+  if(autoMatchAttempt && !retry)return;
+  if(!starting && !matchAttempt && activePublicTable()) {
+    const active=activePublicTable();await start(s=>s.resume(active.gameId,active.sender),"resume");return;
+  }
+  if(starting || matchAttempt || !walletBalanceKnown || !nickname() || !(wallet?.balance>0))return;
+  matchAttempt=true;autoMatchAttempt=true;
+  await start(async s=>{
+    location.hash="/match";
+    matchingScreen();
+    const walletId=await walletMatchId(wallet);
+    matchmaker=new Matchmaking(status=>{
+      if(status==="matched") {
+        $("preparation-title").textContent="Dealing next hand…";
+        visible("cancel-match",false);
+      }
+    },walletId);
+    // An assigned seat must resume even if its buy-in has already left the wallet.
+    if(!pendingMatch()) {
+      const needed=await publicBuyInRequirement(wallet);
+      const coins=await wallet.refresh();
+      if(!coins.some(c=>c.status.confirmed && c.value>=needed)) {
+        throw new Error(`Fund your wallet with at least ${formatBitcoinAmount(needed)} before playing.`);
+      }
+    }
+    const assignment=await matchmaker.find();
+    if(!assignment) {
+      location.hash="";visible("game",false);visible("lobby",true);visible("cancel-match",false);return;
+    }
+    visible("cancel-match",false);
+    await s.joinMatched(assignment,nickname());
+    rememberPublicTable(assignment);forgetMatch();
+  },"match");
+  matchAttempt=false;
+}
+$("play-now").onclick=()=>void playNow(true);
+$("cancel-match-lobby").onclick = $("cancel-match").onclick=async()=>{
+  if(!matchmaker)return;
+  $("cancel-match").disabled=$("cancel-match-lobby").disabled=true;
+  $("cancel-match-lobby").textContent="Cancelling…";$("preparation-title").textContent="Cancelling…";
+  try {
+    await matchmaker.cancel();
+    if(!matchAttempt) {
+      if(matchmaker.cancelled) {location.hash="";visible("cancel-match-lobby",false);visible("lobby-error",false);visible("lobby-error-details",false);updateWalletEntry();}
+      else void playNow(true);
+    }
+  }
+  catch(error) {
+    $("cancel-match").disabled=false;$("preparation-title").textContent="Couldn’t cancel. Try again.";visible("preparation-progress",false);
+    if(!matchAttempt){visible("lobby-error",true);$("lobby-error").textContent="Couldn’t cancel. Try again.";}
+  } finally {$("cancel-match-lobby").disabled=false;$("cancel-match-lobby").textContent="Cancel matchmaking";}
+};
 $("create-game").onclick = () => void start(s => s.create(nickname()));
 $("join-retry").onclick = () => { autoInviteAttempt = null; void joinInviteRoute(); };
 $("copy-link").onclick = async () => {
@@ -370,9 +448,10 @@ function updateWalletEntry() {
   document.body.classList.toggle("wallet-onboarding", needsFunds);
   if (needsFunds) $("wallet-panel").open = true;
   else if (wasOnboarding) $("wallet-panel").open = false;
-  $("create-game").disabled = $("join-retry").disabled = starting || needsName || !nickname() || !walletBalanceKnown || !(wallet?.balance > 0);
+  $("play-now").disabled = $("create-game").disabled = $("join-retry").disabled = starting || needsName || !nickname() || !walletBalanceKnown || !(wallet?.balance > 0);
+  $("create-game").disabled ||= pendingMatch() || !!activePublicTable();
 }
-window.addEventListener("nickname-ready", () => { updateWalletEntry(); void joinInviteRoute(); });
+window.addEventListener("nickname-ready", () => { updateWalletEntry(); void joinInviteRoute(); if(location.hash==="#/match")void playNow(); });
 updateWalletEntry();
 async function refreshWallet({ quiet = false } = {}) {
   if (walletRefreshing) return;
@@ -392,6 +471,7 @@ async function refreshWallet({ quiet = false } = {}) {
     updateWalletEntry();
     $("wallet-status").textContent = wallet.balance ? "Available for buy-ins." : walletPending ? "Waiting for your funds to arrive." : "Send funds here to fund your buy-in.";
     void joinInviteRoute();
+    if(location.hash==="#/match") void playNow();
   } catch(error) {
     visible("wallet-retry", true);
     if (!walletBalanceKnown) {
@@ -415,7 +495,18 @@ $("copy-wallet").onclick = async()=>{
   try { await navigator.clipboard.writeText($("wallet-address").value); $("copy-wallet").textContent="Copied"; }
   catch { $("wallet-address").select(); $("copy-wallet").textContent="Copy"; }
 };
-$("back-to-lobby").onclick = ()=>{ session?.close();session=null;location.hash="";visible("game",false);visible("lobby",true);updateWalletEntry();void refreshWallet(); };
+function returnToLobby() {
+  if(last?.data?.left){forgetMatch();clearPublicTable();}
+  if(session) {dismissedSessions.add(session);session.close();}
+  session=null;last=null;
+  for(const timer of nextHandTransition?.timers ?? [])clearTimeout(timer);
+  nextHandTransition=null;nextHandLabel.classList.add("hidden");
+  document.body.classList.remove("matchmaking");
+  location.hash="";visible("game",false);visible("lobby",true);
+  updateWalletEntry();void refreshWallet();
+  window.scrollTo({top:0,left:0,behavior:"instant"});
+}
+$("back-to-lobby").onclick = returnToLobby;
 void refreshWallet();
 setInterval(() => void refreshWallet({ quiet: true }), 15_000);
 const match = location.hash.match(/^#\/table\/([a-f0-9]{64})\/(alice|bob)$/);
@@ -423,6 +514,7 @@ if (match) await start((s) => s.resume(match[1], match[2]), "resume");
 else loadInviteRoute();
 function loadInviteRoute() {
   updateWalletEntry();
+  if(location.hash==="#/match") {void playNow();return;}
   if (!location.hash.startsWith("#/join/")) { autoInviteAttempt = null; return; }
   void joinInviteRoute();
 }

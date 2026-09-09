@@ -61,6 +61,19 @@ export function channelWorker() {
   const worker=idleChannelWorker&&!idleChannelWorker.closed?idleChannelWorker:new Rpc(new URL('./channel-worker.js',import.meta.url));
   idleChannelWorker=undefined;return worker;
 }
+export async function workerFailure(url,message) {
+  // A deployment removes the old versioned URLs. Recreating a worker from that
+  // same tab cannot repair a missing module; ask for a page reload explicitly.
+  // Never substitute code from another app version into a running session.
+  const source=new URL(url,import.meta.url);
+  if(/^https?:$/.test(source.protocol)&&/^\/assets\/[a-f0-9]{64}\//.test(source.pathname)) {
+    try {
+      const response=await fetch(source,{method:'HEAD',cache:'no-store',signal:AbortSignal.timeout(2000)});
+      if(response.status===404)return new Error('Worker app file unavailable. Reload this tab.');
+    } catch { /* Preserve the original worker failure if the probe is offline. */ }
+  }
+  return new Error(`Worker failed: ${source.pathname.split('/').at(-1)}: ${message || 'Worker could not start or stopped unexpectedly'}`);
+}
 export class Rpc {
   constructor(url) {
     this.worker = new Worker(url, { type: "module" });
@@ -79,7 +92,12 @@ export class Rpc {
       if (Object.hasOwn(d, "error")) j.reject(new Error(d.error || "Worker request failed without an error message"));
       else j.resolve(d.value);
     };
-    this.worker.onerror = (e) => this.close(new Error(e.message));
+    this.worker.onerror = (e) => {
+      // We reject this worker's RPCs explicitly. Do not also bubble the handled
+      // failure through its parent worker as a second, usually empty error.
+      e.preventDefault?.();
+      void workerFailure(url,e.message).then(error=>this.close(error));
+    };
   }
   call(method, args = {}, transfer = []) {
     if(this.closed)return Promise.reject(this.closed);

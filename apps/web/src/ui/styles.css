@@ -273,9 +273,12 @@ main { display: flow-root; width: min(1220px, calc(100% - 40px)); margin: 0 auto
   justify-content: flex-end;
   align-items: baseline;
   gap: 5px;
-  margin: 0 8px 8px 0;
+  margin: 0 0 8px;
   color: var(--muted);
-  font: 400 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
 }
 .blind-level strong { font-weight: 500; }
 .table-message {
@@ -515,7 +518,7 @@ main { display: flow-root; width: min(1220px, calc(100% - 40px)); margin: 0 auto
 body:has(#game:not(.hidden)) .noise { opacity: .008; }
 .game-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .table-column { min-width: 0; }
-.blind-level { margin: 0 8px 58px; gap: 6px; font-size: 11px; }
+.blind-level { margin: 0 0 58px; gap: 6px; }
 .poker-table, :is(.onchain-table,.practice-table) .poker-table {
   height: clamp(500px, 46vw, 560px); min-height: 0;
   margin: 0 18px 38px; border: 9px solid #293831; border-radius: 50%;
@@ -532,7 +535,12 @@ body:has(#game:not(.hidden)) .noise { opacity: .008; }
 .seat-copy .seat-stack { margin-top: 5px; font: 700 15px/1.2 ui-monospace,monospace; color: #f5ecd9; }
 .avatar { flex: 0 0 42px; height: 42px; width: 42px; font-size: 15px; background: #a49b79; }
 .avatar.local { background: #50836b; color: #f7f3e7; }
-.seat.active-turn { border-color: #62e7aa; box-shadow: 0 0 0 3px #62e7aa35,0 5px 12px #0005; }
+.seat.active-turn { border-color: #62e7aa; box-shadow: 0 0 0 2px #62e7aa35,0 5px 12px #0005; }
+.seat.active-turn:not(:has(.avatar.processing)) { animation: active-seat-glow 3.6s ease-in-out infinite; }
+@keyframes active-seat-glow {
+  0%, 100% { box-shadow: 0 0 0 2px #62e7aa30, 0 0 10px 1px #62e7aa18, 0 0 23px 0 #62e7aa08, 0 5px 12px #0005; }
+  50% { box-shadow: 0 0 0 2px #62e7aa70, 0 0 20px 3px #62e7aa66, 0 0 36px 6px #62e7aa38, 0 5px 12px #0005; }
+}
 .dealer-button { position: absolute; right: -37px; top: 18px; }
 .blind-marker { position: absolute; left: -45px; }
 .card-pair { position: absolute; left: 50%; transform: translateX(-50%); gap: 5px; }
@@ -594,7 +602,7 @@ body:has(#game:not(.hidden)) .noise { opacity: .008; }
   #invite-card { padding: 18px; }
 }
 @media(max-width:680px) {
-  .blind-level { margin-bottom: 57px; font-size: 10px; }
+  .blind-level { margin-bottom: 57px; }
   .poker-table, :is(.onchain-table,.practice-table) .poker-table { height: 460px; min-height: 0; margin-left: 0; margin-right: 0; border-width: 6px; border-radius: 45% / 35%; }
   .felt-ring { inset: 9px; }
   .seat { width: 168px; height: 58px; padding: 10px; border-radius: 29px; }
@@ -666,7 +674,7 @@ body:has(#game:not(.hidden)) .game-shell { padding-top: 42px; }
   :is(.onchain-table,.practice-table) .poker-table { height: clamp(460px, calc(100dvh - 274px), 560px); }
 }
 
-.table-preparation, .next-hand-label { position: absolute; z-index: 5; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100% - 40px)); padding: 26px; border: 1px solid #8ca58e55; border-radius: 16px; background: #14271ef5; box-shadow: 0 16px 40px #0005; text-align: center; }
+.table-preparation, .next-hand-label, .onchain-table .poker-table > .table-message { position: absolute; z-index: 5; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100% - 40px)); min-height: 109px; padding: 26px; border: 1px solid #8ca58e55; border-radius: 16px; background: #14271ef5; box-shadow: 0 16px 40px #0005; text-align: center; }
 .table-preparation h2, .next-hand-label h2 { margin: 0 0 20px; font: 600 20px/1.3 system-ui,sans-serif; color: var(--cream); }
 .progress-indicator { display: block; appearance: none; width: 100%; height: 9px; border: 0; border-radius: 99px; overflow: hidden; background: #ffffff14; accent-color: var(--green); }
 .progress-indicator::-webkit-progress-bar { background: #ffffff14; border-radius: 99px; }
@@ -676,7 +684,11 @@ body:has(#game:not(.hidden)) .game-shell { padding-top: 42px; }
 
 .action-buttons button { -webkit-user-select: none; user-select: none; }
 
-.onchain-table .poker-table > .table-message { inset: auto; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100% - 40px)); height: auto; min-height: 0; padding: 26px; border: 1px solid #8ca58e55; border-radius: 16px; background: #14271ef5; box-shadow: 0 16px 40px #0005; z-index: 5; }
+.onchain-table .poker-table > .table-message { inset: auto; top: 50%; left: 50%; height: auto; }
+.table-message small:empty { display: none; }
+@media (max-width: 480px) {
+  .table-preparation, .next-hand-label, .onchain-table .poker-table > .table-message { min-height: 135px; }
+}
 .onchain-table .poker-table > .table-message span { font: 600 20px/1.3 system-ui,sans-serif; }
 
 .wallet-onboarding-title { display: none; }
@@ -772,3 +784,14 @@ body:not(.invite-entry) .lobby-shell #lobby-error-details { margin: 0 32px 24px;
 body:not(.invite-entry) .lobby-shell > .entry-card > .error-message { margin-top: 0; padding-bottom: 16px; }
 
 .cards-not-dealt .card-pair { visibility: hidden; }
+
+/* Public play is the default; private invitations remain a secondary action. */
+#play-now { justify-content: center; }
+.private-table-button { display: block; width: 100%; min-height: 44px; margin-top: 12px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--cream); text-align: center; font-weight: 600; }
+.private-table-button:hover { background: #ffffff0a; }
+.private-table-button:disabled { opacity: .5; cursor: wait; }
+#cancel-match { margin-top: 20px; }
+
+#cancel-match-lobby { margin: 0 32px 20px; width: calc(100% - 64px); }
+
+.matchmaking .sit-out-control { visibility: hidden; }
